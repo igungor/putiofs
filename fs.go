@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,7 @@ func (f *FileSystem) Delete(ctx context.Context, id int64) error {
 	return f.putio.Files.Delete(ctx, id)
 }
 
-func (f *FileSystem) Download(ctx context.Context, id int64) (io.ReadCloser, error) {
+func (f *FileSystem) Download(ctx context.Context, id int64, rangeHeader http.Header) (io.ReadCloser, error) {
 	return f.putio.Files.Download(ctx, id, true, nil)
 }
 
@@ -114,7 +115,6 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	// skip junk files to quiet log noise
 	filename := req.Name
 	if isJunkFile(filename) {
-		d.fs.logger.Debugf("Skipped, %q seems like a junk file\n", filename)
 		return nil, fuse.ENOENT
 	}
 
@@ -289,9 +289,9 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	f.fs.logger.Debugf("File open request for %v\n", f)
 
-	body, err := f.fs.Download(ctx, f.ID)
+	body, err := f.fs.Download(nil, f.ID, nil)
 	if err != nil {
-		f.fs.logger.Printf("Error opening file %v: %v\n", f, err)
+		f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Filename, err)
 		return nil, fuse.ENOENT
 	}
 
@@ -332,7 +332,7 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 		return err
 	}
 	resp.Data = buf[:n]
-	return err
+	return nil
 }
 
 func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
