@@ -24,8 +24,7 @@ type FileSystem struct {
 }
 
 var (
-	_ fs.FS         = (*FileSystem)(nil)
-	_ fs.FSStatfser = (*FileSystem)(nil)
+	_ fs.FS = (*FileSystem)(nil)
 )
 
 func NewFileSystem(token string, debug bool) *FileSystem {
@@ -59,9 +58,15 @@ func (f *FileSystem) Download(ctx context.Context, id int64) (io.ReadCloser, err
 	return f.putio.Files.Download(ctx, id, true, nil)
 }
 
-func (f *FileSystem) Root() (fs.Node, error) {
-	f.logger.Debugln("Filesystem Root request")
+func (f *FileSystem) Rename(ctx context.Context, id int64, newname string) error {
+	return f.putio.Files.Rename(ctx, id, newname)
+}
 
+func (f *FileSystem) Move(ctx context.Context, parent int64, fileid int64) error {
+	return f.putio.Files.Move(ctx, parent, fileid)
+}
+
+func (f *FileSystem) Root() (fs.Node, error) {
 	root, err := f.Get(nil, 0)
 	if err != nil {
 		f.logger.Printf("Root failed: %v\n", err)
@@ -76,25 +81,12 @@ func (f *FileSystem) Root() (fs.Node, error) {
 	}, nil
 }
 
-func (f *FileSystem) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
-	f.logger.Debugln("Filesystem Stat request")
-
-	info, err := f.putio.Account.Info(ctx)
-	if err != nil {
-		return err
-	}
-
-	resp.Blocks = uint64(info.Disk.Used)
-	return nil
-}
-
 type Dir struct {
 	fs *FileSystem
 
-	ID       int64
-	Name     string
-	Size     int64
-	children fs.Node
+	ID   int64
+	Name string
+	Size int64
 }
 
 var (
@@ -119,12 +111,14 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 
 // Lookup looks up a specific entry in the current directory.
 func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
-	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
-
+	// skip junk files to quiet log noise
 	filename := req.Name
 	if isJunkFile(filename) {
+		d.fs.logger.Debugf("Skipped, %q seems like a junk file\n", filename)
 		return nil, fuse.ENOENT
 	}
+
+	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
 
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
@@ -204,6 +198,71 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	}
 
 	return fuse.ENOENT
+}
+
+func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
+	newdir, ok := newDir.(*Dir)
+	if !ok {
+		d.fs.logger.Debugln("Error converting Node to Dir")
+		return fuse.ENOENT
+	}
+
+	oldname := req.OldName
+	newname := req.NewName
+
+	d.fs.logger.Printf("origdirid: %v, newDirid: %v, old: %v, newname: %v\n", d, newdir, req.OldName, req.NewName)
+
+	files, err := d.fs.List(ctx, d.ID)
+	if err != nil {
+		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		return fuse.ENOENT
+	}
+
+	fileid := int64(-1)
+	for _, file := range files {
+		if file.Filename == oldname {
+			fileid = file.ID
+		}
+	}
+
+	if fileid < 0 {
+		d.fs.logger.Printf("File not found %v: %v\n", oldname, err)
+		return fuse.ENOENT
+	}
+
+	// request is to ust change the name
+	if newdir.ID == d.ID {
+		return d.rename(ctx, fileid, oldname, newname)
+	}
+
+	// file/directory moved into another directory
+	return d.move(ctx, fileid, newdir.ID, oldname, newname)
+}
+
+func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string) error {
+	d.fs.logger.Debugf("Rename request for %v:%v -> %v\n", fileid, oldname, newname)
+
+	if oldname == newname {
+		return nil
+	}
+
+	return d.fs.Rename(ctx, fileid, newname)
+}
+
+func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname string, newname string) error {
+	d.fs.logger.Debugf("Move request for %v:%v -> %v:%v\n", fileid, oldname, parent, newname)
+
+	err := d.fs.Move(ctx, parent, fileid)
+	if err != nil {
+		d.fs.logger.Printf("Error moving file: %v\n", err)
+		return fuse.ENOENT
+	}
+
+	if oldname != newname {
+		return d.fs.Rename(ctx, fileid, newname)
+	}
+
+	return nil
 }
 
 type File struct {
@@ -290,6 +349,7 @@ var junkFilePrefixes = []string{
 	".hidden",
 	".metadata_never_index",
 	".nomedia",
+	".envrc",
 }
 
 // isJunkFile reports whether the given file path is considered useless. MacOSX
