@@ -298,25 +298,17 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	f.fs.logger.Debugf("File open request for %v\n", f)
 
-	body, err := f.fs.Download(nil, f.ID, nil)
-	if err != nil {
-		f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Filename, err)
-		return nil, fuse.ENOENT
-	}
-
 	return &FileHandle{
-		fs:   f.fs,
-		ID:   f.ID,
-		Name: f.Filename,
-		body: body,
+		fs: f.fs,
+		f:  f,
 	}, nil
 }
 
 type FileHandle struct {
-	fs   *FileSystem
-	ID   int64
-	Name string
-	body io.ReadCloser
+	fs     *FileSystem
+	f      *File
+	offset int64 // Read offset
+	body   io.ReadCloser
 }
 
 var (
@@ -325,11 +317,37 @@ var (
 )
 
 func (fh *FileHandle) String() string {
-	return fmt.Sprintf("<%v - %q>", fh.ID, fh.Name)
+	return fmt.Sprintf("<%v - %q>", fh.f.ID, fh.f.Filename)
 }
 
 func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	fh.fs.logger.Debugln("FileHandler Read request")
+	fh.fs.logger.Debugf("FileHandler Read request. Handle offset: %v, Request offset: %v\n", fh.offset, req.Offset)
+
+	if req.Offset >= fh.f.Filesize {
+		return fuse.EIO
+	}
+
+	var renew bool
+	switch {
+	case fh.body == nil: // initial read
+		renew = true
+	case fh.offset != req.Offset: // seek occurred
+		renew = true
+		_ = fh.body.Close()
+	}
+
+	if renew {
+		rangeHeader := http.Header{}
+		rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-%v", req.Offset, req.Offset+int64(req.Size)))
+		body, err := fh.fs.Download(nil, fh.f.ID, rangeHeader)
+		if err != nil {
+			fh.fs.logger.Printf("Error downloading %v-%v: %v\n", fh.f.ID, fh.f.Filename, err)
+			return fuse.EIO
+		}
+		// reset offset and the body
+		fh.offset = req.Offset
+		fh.body = body
+	}
 
 	buf := make([]byte, req.Size)
 	n, err := io.ReadFull(fh.body, buf)
@@ -340,6 +358,8 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 		fh.fs.logger.Printf("Error reading file %v: %v\n", fh, err)
 		return err
 	}
+
+	fh.offset += int64(n)
 	resp.Data = buf[:n]
 	return nil
 }
@@ -347,7 +367,11 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	fh.fs.logger.Debugln("FileHandler Release request")
 
-	return fh.body.Close()
+	fh.offset = 0
+	if fh.body != nil {
+		return fh.body.Close()
+	}
+	return nil
 }
 
 var junkFilePrefixes = []string{
