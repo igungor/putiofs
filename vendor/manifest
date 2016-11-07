@@ -1,0 +1,52 @@
+{
+	"version": 0,
+	"dependencies": [
+		{
+			"importpath": "bazil.org/fuse",
+			"repository": "https://github.com/bazil/fuse",
+			"revision": "371fbbdaa8987b715bdd21d6adc4c9b20155f748",
+			"branch": "master"
+		},
+		{
+			"importpath": "bazil.org/fuse/fs",
+			"repository": "https://github.com/bazil/fuse",
+			"revision": "371fbbdaa8987b715bdd21d6adc4c9b20155f748",
+			"branch": "master",
+			"path": "/fs"
+		},
+		{
+			"importpath": "cloud.google.com/go/compute/metadata",
+			"repository": "https://code.googlesource.com/gocloud",
+			"revision": "de6327ff59c3b948280722fff37159f01eeaf74e",
+			"branch": "master",
+			"path": "/compute/metadata"
+		},
+		{
+			"importpath": "cloud.google.com/go/internal",
+			"repository": "https://code.googlesource.com/gocloud",
+			"revision": "de6327ff59c3b948280722fff37159f01eeaf74e",
+			"branch": "master",
+			"path": "/internal"
+		},
+		{
+			"importpath": "github.com/igungor/go-putio/putio",
+			"repository": "https://github.com/igungor/go-putio",
+			"revision": "9b150d28496c7c68bafde0562ca058733e8a4c87",
+			"branch": "master",
+			"path": "/putio"
+		},
+		{
+			"importpath": "golang.org/x/net/context",
+			"repository": "https://go.googlesource.com/net",
+			"revision": "569280fa63be4e201b975e5411e30a92178f0118",
+			"branch": "master",
+			"path": "/context"
+		},
+		{
+			"importpath": "golang.org/x/oauth2",
+			"repository": "https://go.googlesource.com/oauth2",
+			"revision": "36bc61733fc9aafc59f010d5e6bfefb63b007fd7",
+			"branch": "master"
+		}
+	]
+}
