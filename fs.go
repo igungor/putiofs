@@ -71,7 +71,7 @@ func (f *FileSystem) Root() (fs.Node, error) {
 	root, err := f.Get(nil, 0)
 	if err != nil {
 		f.logger.Printf("Root failed: %v\n", err)
-		return nil, fuse.ENOENT
+		return nil, fuse.EIO
 	}
 
 	return &Dir{
@@ -123,7 +123,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Lookup failed for %v: %v\n", d, err)
-		return nil, fuse.ENOENT
+		return nil, fuse.EIO
 	}
 
 	for _, file := range files {
@@ -152,7 +152,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
-		return nil, fuse.ENOENT
+		return nil, fuse.EIO
 	}
 
 	var entries []fuse.Dirent
@@ -182,13 +182,13 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 	filename := req.Name
 	if filename == "/" || filename == "Your Files" {
-		return fuse.ENOENT
+		return fuse.EIO
 	}
 
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
-		return fuse.ENOENT
+		return fuse.EIO
 	}
 
 	for _, file := range files {
@@ -204,7 +204,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	newdir, ok := newDir.(*Dir)
 	if !ok {
 		d.fs.logger.Debugln("Error converting Node to Dir")
-		return fuse.ENOENT
+		return fuse.EIO
 	}
 
 	oldname := req.OldName
@@ -215,7 +215,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
-		return fuse.ENOENT
+		return fuse.EIO
 	}
 
 	fileid := int64(-1)
@@ -232,11 +232,20 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 	// request is to ust change the name
 	if newdir.ID == d.ID {
-		return d.rename(ctx, fileid, oldname, newname)
+		err := d.rename(ctx, fileid, oldname, newname)
+		if err != nil {
+			d.fs.logger.Printf("Rename failed: %v\n", err)
+			return fuse.EIO
+		}
 	}
 
 	// file/directory moved into another directory
-	return d.move(ctx, fileid, newdir.ID, oldname, newname)
+	err = d.move(ctx, fileid, newdir.ID, oldname, newname)
+	if err != nil {
+		d.fs.logger.Printf("Move failed: %v\n", err)
+		return fuse.EIO
+	}
+	return nil
 }
 
 func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string) error {
@@ -255,7 +264,7 @@ func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname stri
 	err := d.fs.Move(ctx, parent, fileid)
 	if err != nil {
 		d.fs.logger.Printf("Error moving file: %v\n", err)
-		return fuse.ENOENT
+		return fuse.EIO
 	}
 
 	if oldname != newname {
