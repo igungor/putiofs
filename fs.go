@@ -239,7 +239,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	oldname := req.OldName
 	newname := req.NewName
 
-	d.fs.logger.Printf("origdirid: %v, newDirid: %v, old: %v, newname: %v\n", d, newdir, req.OldName, req.NewName)
+	d.fs.logger.Debugf("origdirid: %v, newDirid: %v, old: %v, newname: %v\n", d, newdir, req.OldName, req.NewName)
 
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
