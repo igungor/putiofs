@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,12 +21,14 @@ const DefaultUserAgent = "putiofs - FUSE bridge to Put.io"
 const AttrValidityDuration = time.Hour
 
 type FileSystem struct {
-	putio  *putio.Client
-	logger *Logger
+	logger  *Logger
+	putio   *putio.Client
+	account putio.AccountInfo
 }
 
 var (
-	_ fs.FS = (*FileSystem)(nil)
+	_ fs.FS         = (*FileSystem)(nil)
+	_ fs.FSStatfser = (*FileSystem)(nil)
 )
 
 func NewFileSystem(token string, debug bool) *FileSystem {
@@ -68,11 +71,20 @@ func (f *FileSystem) Move(ctx context.Context, parent int64, fileid int64) error
 }
 
 func (f *FileSystem) Root() (fs.Node, error) {
+	f.logger.Debugf("Root() request\n")
+
 	root, err := f.Get(nil, 0)
 	if err != nil {
 		f.logger.Printf("Root failed: %v\n", err)
 		return nil, fuse.EIO
 	}
+
+	account, err := f.putio.Account.Info(nil)
+	if err != nil {
+		f.logger.Debugf("Fetching account info failed: %v\n", err)
+		return nil, fuse.EIO
+	}
+	f.account = account
 
 	return &Dir{
 		fs:   f,
@@ -80,6 +92,18 @@ func (f *FileSystem) Root() (fs.Node, error) {
 		Name: root.Filename,
 		Size: root.Filesize,
 	}, nil
+}
+
+func (f *FileSystem) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
+	// each block size is 4096 bytes by default.
+	const unit = uint64(4096)
+
+	resp.Bsize = uint32(unit)
+	resp.Blocks = uint64(f.account.Disk.Size) / unit
+	resp.Bavail = uint64(f.account.Disk.Avail) / unit
+	resp.Bfree = uint64(f.account.Disk.Avail) / unit
+
+	return nil
 }
 
 type Dir struct {
@@ -104,7 +128,6 @@ func (d *Dir) String() string {
 func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	d.fs.logger.Debugf("Directory stat for %v\n", d)
 
-	attr.Inode = uint64(d.ID)
 	attr.Mode = os.ModeDir | 0755
 	attr.Size = uint64(d.Size)
 	return nil
@@ -119,6 +142,13 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	}
 
 	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
+
+	// reserved filename lookups
+	switch filename {
+	case ".account":
+		acc, _ := json.MarshalIndent(d.fs.account, "", "  ")
+		return staticFileNode(string(acc)), nil
+	}
 
 	files, err := d.fs.List(ctx, d.ID)
 	if err != nil {
@@ -166,9 +196,8 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 			dt = fuse.DT_File
 		}
 		entry = fuse.Dirent{
-			Inode: uint64(file.ID),
-			Name:  file.Filename,
-			Type:  dt,
+			Name: file.Filename,
+			Type: dt,
 		}
 		entries = append(entries, entry)
 	}
@@ -288,7 +317,6 @@ var (
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	f.fs.logger.Debugf("File stat for %v\n", f)
 
-	attr.Inode = uint64(f.ID)
 	attr.Mode = os.ModePerm | 0644
 	attr.Size = uint64(f.Filesize)
 	attr.Ctime = f.CreatedAt.Time
@@ -371,6 +399,35 @@ func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) err
 	if fh.body != nil {
 		return fh.body.Close()
 	}
+	return nil
+}
+
+type staticFileNode string
+
+var (
+	_ fs.Node         = (*staticFileNode)(nil)
+	_ fs.HandleReader = (*staticFileNode)(nil)
+)
+
+func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
+	attr.Mode = 0400
+	attr.Size = uint64(len(s))
+
+	return nil
+}
+
+func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	if req.Offset > int64(len(s)) {
+		return nil
+	}
+
+	s = s[req.Offset:]
+	size := req.Size
+	if size > len(s) {
+		size = len(s)
+	}
+	resp.Data = make([]byte, size)
+	copy(resp.Data, s)
 	return nil
 }
 
