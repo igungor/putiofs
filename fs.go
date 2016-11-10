@@ -144,6 +144,45 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	return nil
 }
 
+// Create implements fs.NodeCreater interface. It is called to create and open
+// a new file.
+func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+	d.fs.logger.Debugf("File create request for %v\n", d)
+
+	fmt.Println(req.Name)
+
+	u, err := d.fs.putio.Files.Upload(ctx, strings.NewReader(""), req.Name, d.ID)
+	if err != nil {
+		d.fs.logger.Printf("Upload failed: %v\n", err)
+		return nil, nil, fuse.EIO
+	}
+
+	// possible a torrent file is uploaded. torrent files are picked up by the
+	// Put.io API and pushed into the transfer queue. Original torrent file is
+	// not keeped.
+	if u.Transfer != nil {
+		return nil, nil, fuse.ENOENT
+	}
+
+	if u.File == nil {
+		return nil, nil, fuse.EIO
+	}
+
+	f := &File{
+		fs:   d.fs,
+		File: u.File,
+	}
+
+	fh := &FileHandle{
+		fs: d.fs,
+		f:  f,
+	}
+
+	return f, fh, nil
+}
+
+// Mkdir implements fs.NodeMkdirer interface. It is called to create a new
+// directory.
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
 	d.fs.logger.Debugf("Directory mkdir request for %v\n", d)
 
@@ -382,6 +421,15 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	return nil
 }
 
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	f.fs.logger.Debugf("Fsync request for %v\n", f)
+
+	return fuse.ENOTSUP
+}
+
+// Open implements the fs.NodeOpener interface. It is called the first time a
+// file is opened by any process. Further opens or FD duplications will reuse
+// this handle. When all FDs have been closed, Release() will be called.
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	f.fs.logger.Debugf("File open request for %v\n", f)
 
