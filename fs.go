@@ -116,6 +116,7 @@ type Dir struct {
 
 var (
 	_ fs.Node                = (*Dir)(nil)
+	_ fs.NodeMkdirer         = (*Dir)(nil)
 	_ fs.NodeRequestLookuper = (*Dir)(nil)
 	_ fs.NodeRemover         = (*Dir)(nil)
 	_ fs.HandleReadDirAller  = (*Dir)(nil)
@@ -133,6 +134,37 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(d.Size)
 	return nil
+}
+
+func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+	d.fs.logger.Debugf("Directory mkdir request for %v\n", d)
+
+	name := req.Name
+
+	files, err := d.fs.List(ctx, d.ID)
+	if err != nil {
+		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		return nil, fuse.EIO
+	}
+
+	for _, file := range files {
+		if file.Filename == name {
+			return nil, fuse.EEXIST
+		}
+	}
+
+	dir, err := d.fs.putio.Files.CreateFolder(ctx, name, d.ID)
+	if err != nil {
+		d.fs.logger.Printf("Create folder failed: %v\n", err)
+		return nil, fuse.EIO
+	}
+
+	return &Dir{
+		fs:   d.fs,
+		ID:   dir.ID,
+		Name: dir.Filename,
+		Size: dir.Filesize,
+	}, nil
 }
 
 // Lookup looks up a specific entry in the current directory.
