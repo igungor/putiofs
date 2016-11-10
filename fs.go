@@ -535,14 +535,15 @@ func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *f
 }
 
 var junkFilePrefixes = []string{
-	"._",
-	".DS_Store",
-	".Spotlight-",
-	".git",
-	".hidden",
+	"._",          // macOS
+	".DS_Store",   // macOS
+	".Spotlight-", // macOS
+	".ql_",        // macOS quicklook
+	".hidden",     // macOS
 	".metadata_never_index",
 	".nomedia",
-	".envrc",
+	".git",
+	".envrc", // direnv
 }
 
 // isJunkFile reports whether the given file path is considered useless. MacOSX
