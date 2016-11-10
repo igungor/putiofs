@@ -21,6 +21,7 @@ import (
 const DefaultUserAgent = "putiofs - FUSE bridge to Put.io"
 const AttrValidityDuration = time.Hour
 
+// Filesystem is the main object that represents a Put.io filesystem.
 type FileSystem struct {
 	logger  *Logger
 	putio   *putio.Client
@@ -71,6 +72,8 @@ func (f *FileSystem) Move(ctx context.Context, parent int64, fileid int64) error
 	return f.putio.Files.Move(ctx, parent, fileid)
 }
 
+// Root implements fs.FS interface. It is called once to get the root
+// directory inode for the mount point.
 func (f *FileSystem) Root() (fs.Node, error) {
 	f.logger.Debugf("Root() request\n")
 
@@ -95,6 +98,7 @@ func (f *FileSystem) Root() (fs.Node, error) {
 	}, nil
 }
 
+// Statfs implements fs.FSStatfser interface.
 func (f *FileSystem) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
 	// each block size is 4096 bytes by default.
 	const unit = uint64(4096)
@@ -107,6 +111,7 @@ func (f *FileSystem) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *
 	return nil
 }
 
+// Dir is single directory reference in the Put.io filesystem.
 type Dir struct {
 	fs *FileSystem
 
@@ -124,9 +129,11 @@ var (
 )
 
 func (d *Dir) String() string {
-	return fmt.Sprintf("<%v - %q>", d.ID, d.Name)
+	return fmt.Sprintf("<Dir ID: %v Name: %q>", d.ID, d.Name)
 }
 
+// Attr implements fs.Node interface. It is called when fetching the inode
+// attribute for this directory.
 func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	d.fs.logger.Debugf("Directory stat for %v\n", d)
 
@@ -168,7 +175,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	}, nil
 }
 
-// Lookup looks up a specific entry in the current directory.
+// Lookup implements fs.NodeRequestLookuper. It is called to look up a directory entry by name.
 func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
 	// skip junk files to quiet log noise
 	filename := req.Name
@@ -211,6 +218,8 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	return nil, fuse.ENOENT
 }
 
+// ReadDirAll implements fs.HandleReadDirAller. it returns the entire contents
+// of the directory when the directory is being listed (e.g., with "ls").
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.fs.logger.Debugf("Directory listing for %v\n", d)
 
@@ -239,8 +248,9 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	return entries, nil
 }
 
-// Remove removes the entry with the given name from the current directory. The
-// entry to be removed may correspond to a file or to a directory.
+// Remove implements the fs.NodeRemover interace. It is called to remove the
+// entry with the given name from the current directory. The entry to be
+// removed may correspond to a file or to a directory.
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	d.fs.logger.Debugf("Remove request for %v in %v\n", req.Name, d)
 
@@ -264,10 +274,14 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return fuse.ENOENT
 }
 
+// Rename implements fs.NodeRenamer interface. It's called to rename a file
+// from one name to another, possibly in another directory. Renaming either a
+// file or directory is allowed. Moving a file/directory to another one is also
+// supported.
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
 	newdir, ok := newDir.(*Dir)
 	if !ok {
-		d.fs.logger.Debugln("Error converting Node to Dir")
+		d.fs.logger.Debugf("Error converting Node to Dir\n")
 		return fuse.EIO
 	}
 
@@ -337,6 +351,7 @@ func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname stri
 	return nil
 }
 
+// File is single file reference in the Put.io filesystem.
 type File struct {
 	fs *FileSystem
 
@@ -348,6 +363,12 @@ var (
 	_ fs.NodeOpener = (*File)(nil)
 )
 
+func (f *File) String() string {
+	return fmt.Sprintf("<File ID: %v Name: %q Size: %v>", f.ID, f.Filename, f.Filesize)
+}
+
+// Attr implements fs.Node interface. It is called when fetching the inode
+// attribute for this file.
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	f.fs.logger.Debugf("File stat for %v\n", f)
 
@@ -383,11 +404,12 @@ var (
 )
 
 func (fh *FileHandle) String() string {
-	return fmt.Sprintf("<%v - %q>", fh.f.ID, fh.f.Filename)
+	return fmt.Sprintf("<FileHandle ID: %v Name: %q>", fh.f.ID, fh.f.Filename)
 }
 
+// Read implements the fs.HandleReader interface. It is called to handle every read request.
 func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	fh.fs.logger.Debugf("FileHandler Read request. Handle offset: %v, Request offset: %v\n", fh.offset, req.Offset)
+	fh.fs.logger.Debugf("FileHandle Read request. Handle offset: %v, Request (offset: %v size: %v)\n", fh.offset, req.Offset, req.Size)
 
 	if req.Offset >= fh.f.Filesize {
 		return fuse.EIO
@@ -422,7 +444,7 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 	}
 	if err != nil {
 		fh.fs.logger.Printf("Error reading file %v: %v\n", fh, err)
-		return err
+		return fuse.EIO
 	}
 
 	fh.offset += int64(n)
@@ -430,8 +452,10 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 	return nil
 }
 
+// Release implements the fs.HandleReleaser interface. It is called when all
+// file descriptors to the file have been closed.
 func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	fh.fs.logger.Debugln("FileHandler Release request")
+	fh.fs.logger.Debugf("FileHandle Release request")
 
 	fh.offset = 0
 	if fh.body != nil {
@@ -447,6 +471,8 @@ var (
 	_ fs.HandleReader = (*staticFileNode)(nil)
 )
 
+// Attr implements fs.Node interface. It is called when fetching the inode
+// attribute for this static file.
 func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = 0400
 	attr.Uid = uint32(os.Getuid())
