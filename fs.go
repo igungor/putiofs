@@ -129,6 +129,8 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	d.fs.logger.Debugf("Directory stat for %v\n", d)
 
 	attr.Mode = os.ModeDir | 0755
+	attr.Uid = uint32(os.Getuid())
+	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(d.Size)
 	return nil
 }
@@ -253,7 +255,6 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 			fileid = file.ID
 		}
 	}
-
 	if fileid < 0 {
 		d.fs.logger.Printf("File not found %v: %v\n", oldname, err)
 		return fuse.ENOENT
@@ -317,9 +318,13 @@ var (
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	f.fs.logger.Debugf("File stat for %v\n", f)
 
-	attr.Mode = os.ModePerm | 0644
+	attr.Mode = 0400
+	attr.Uid = uint32(os.Getuid())
+	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(f.Filesize)
 	attr.Ctime = f.CreatedAt.Time
+	attr.Mtime = f.CreatedAt.Time
+	attr.Crtime = f.CreatedAt.Time
 	return nil
 }
 
@@ -411,8 +416,9 @@ var (
 
 func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = 0400
+	attr.Uid = uint32(os.Getuid())
+	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(len(s))
-
 	return nil
 }
 
