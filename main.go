@@ -31,8 +31,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	// create the FUSE connection
-	conn, err := fuse.Mount(flag.Arg(0))
+	// create the fuse connection. NoAppleDouble makes OSXFUSE disallow files
+	// with names used by OS X to store extended attributes on file systems
+	// that do not support them natively.
+	conn, err := fuse.Mount(flag.Arg(0), fuse.NoAppleDouble())
 	if err != nil {
 		log.Fatal(err)
 	}
