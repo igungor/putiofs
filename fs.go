@@ -12,6 +12,7 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"bazil.org/fuse/fuseutil"
 	"github.com/igungor/go-putio/putio"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
@@ -181,7 +182,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	switch filename {
 	case ".account":
 		acc, _ := json.MarshalIndent(d.fs.account, "", "  ")
-		return staticFileNode(string(acc)), nil
+		return staticFileNode(acc), nil
 	}
 
 	files, err := d.fs.List(ctx, d.ID)
@@ -455,17 +456,7 @@ func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 }
 
 func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	if req.Offset > int64(len(s)) {
-		return nil
-	}
-
-	s = s[req.Offset:]
-	size := req.Size
-	if size > len(s) {
-		size = len(s)
-	}
-	resp.Data = make([]byte, size)
-	copy(resp.Data, s)
+	fuseutil.HandleRead(req, resp, []byte(s))
 	return nil
 }
 
