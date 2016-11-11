@@ -349,7 +349,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		return fuse.ENOENT
 	}
 
-	// request is to ust change the name
+	// dst and src directories are the same. just change the filename
 	if newdir.ID == d.ID {
 		err := d.rename(ctx, fileid, oldname, newname)
 		if err != nil {
@@ -358,7 +358,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		}
 	}
 
-	// file/directory moved into another directory
+	// dst and src directory are different. something definitely moved
 	err = d.move(ctx, fileid, newdir.ID, oldname, newname)
 	if err != nil {
 		d.fs.logger.Printf("Move failed: %v\n", err)
@@ -386,6 +386,7 @@ func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname stri
 		return fuse.EIO
 	}
 
+	// something has moved *and* renamed
 	if oldname != newname {
 		return d.fs.rename(ctx, fileid, newname)
 	}
