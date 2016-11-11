@@ -19,10 +19,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const DefaultUserAgent = "putiofs - FUSE bridge to Put.io"
-const AttrValidityDuration = time.Hour
+const defaultUserAgent = "putiofs - FUSE bridge to Put.io"
+const attrValidityDuration = time.Hour
 
-// Filesystem is the main object that represents a Put.io filesystem.
+// FileSystem is the main object that represents a Put.io filesystem.
 type FileSystem struct {
 	logger  *Logger
 	putio   *putio.Client
@@ -34,13 +34,14 @@ var (
 	_ fs.FSStatfser = (*FileSystem)(nil)
 )
 
+// NewFileSystem returns a new Put.io FUSE filesystem.
 func NewFileSystem(token string, debug bool) *FileSystem {
 	oauthClient := oauth2.NewClient(
 		oauth2.NoContext,
 		oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
 	)
 	client := putio.NewClient(oauthClient)
-	client.UserAgent = DefaultUserAgent
+	client.UserAgent = defaultUserAgent
 
 	return &FileSystem{
 		putio:  client,
@@ -171,17 +172,9 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		return nil, nil, fuse.EIO
 	}
 
-	f := &File{
-		fs:   d.fs,
-		File: u.File,
-	}
+	f := &File{fs: d.fs, File: u.File}
 
-	fh := &FileHandle{
-		fs: d.fs,
-		f:  f,
-	}
-
-	return f, fh, nil
+	return f, f, nil
 }
 
 // Mkdir implements fs.NodeMkdirer interface. It is called to create a new
@@ -398,12 +391,23 @@ func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname stri
 type File struct {
 	fs *FileSystem
 
+	// metadata
 	*putio.File
+
+	// read offset
+	offset int64
+
+	// data
+	body io.ReadCloser
 }
 
 var (
 	_ fs.Node       = (*File)(nil)
 	_ fs.NodeOpener = (*File)(nil)
+
+	_ fs.HandleReader   = (*File)(nil)
+	_ fs.HandleReleaser = (*File)(nil)
+	_ fs.NodeFsyncer    = (*File)(nil)
 )
 
 func (f *File) String() string {
@@ -415,7 +419,7 @@ func (f *File) String() string {
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	f.fs.logger.Debugf("File stat for %v\n", f)
 
-	attr.Mode = 0400
+	attr.Mode = 0644
 	attr.Uid = uint32(os.Getuid())
 	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(f.Filesize)
@@ -425,77 +429,67 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	return nil
 }
 
-func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	f.fs.logger.Debugf("Fsync request for %v\n", f)
-
-	return fuse.ENOTSUP
-}
-
 // Open implements the fs.NodeOpener interface. It is called the first time a
 // file is opened by any process. Further opens or FD duplications will reuse
 // this handle. When all FDs have been closed, Release() will be called.
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	f.fs.logger.Debugf("File open request for %v\n", f)
 
-	return &FileHandle{
-		fs: f.fs,
-		f:  f,
-	}, nil
+	return f, nil
 }
 
-type FileHandle struct {
-	fs     *FileSystem
-	f      *File
-	offset int64 // Read offset
-	body   io.ReadCloser
-}
+// Release implements the fs.HandleReleaser interface. It is called when all
+// file descriptors to the file have been closed.
+func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	f.fs.logger.Debugf("File Release request")
 
-var (
-	_ fs.HandleReader   = (*FileHandle)(nil)
-	_ fs.HandleReleaser = (*FileHandle)(nil)
-)
-
-func (fh *FileHandle) String() string {
-	return fmt.Sprintf("<FileHandle ID: %v Name: %q>", fh.f.ID, fh.f.Filename)
+	f.offset = 0
+	if f.body != nil {
+		err := f.body.Close()
+		if err != nil {
+			f.fs.logger.Printf("File release failed: %v\n", err)
+		}
+	}
+	return nil
 }
 
 // Read implements the fs.HandleReader interface. It is called to handle every read request.
-func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	fh.fs.logger.Debugf("FileHandle Read request. Handle offset: %v, Request (offset: %v size: %v)\n", fh.offset, req.Offset, req.Size)
+func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	f.fs.logger.Debugf("File Read request. Handle offset: %v, Request (offset: %v size: %v)\n", f.offset, req.Offset, req.Size)
 
-	if req.Offset >= fh.f.Filesize {
-		fh.fs.logger.Printf("Request offset > actual filesize\n")
+	if req.Offset >= f.Filesize {
+		f.fs.logger.Printf("Request offset > actual filesize\n")
 		return nil
 	}
 
 	var renew bool
 	switch {
-	case fh.body == nil: // initial read
+	case f.body == nil: // initial read
 		renew = true
-	case fh.offset != req.Offset: // seek occurred
+	case f.offset != req.Offset: // seek occurred
 		renew = true
-		_ = fh.body.Close()
+		_ = f.body.Close()
 	}
 
 	if renew {
-		body, err := fh.fs.download(nil, fh.f.ID, req.Offset)
+		body, err := f.fs.download(nil, f.ID, req.Offset)
 		if err != nil {
-			fh.fs.logger.Printf("Error downloading %v-%v: %v\n", fh.f.ID, fh.f.Filename, err)
+			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Filename, err)
 			return fuse.EIO
 		}
 		// reset offset and the body
-		fh.offset = req.Offset
-		fh.body = body
+		f.offset = req.Offset
+		f.body = body
 	}
 
 	buf := make([]byte, req.Size)
-	n, err := io.ReadFull(fh.body, buf)
-	fh.offset += int64(n)
+	n, err := io.ReadFull(f.body, buf)
+	f.offset += int64(n)
 	if err == io.ErrUnexpectedEOF || err == io.EOF {
 		err = nil
 	}
 	if err != nil {
-		fh.fs.logger.Printf("Error reading file %v: %v\n", fh, err)
+		f.fs.logger.Printf("Error reading file %v: %v\n", f, err)
 		return fuse.EIO
 	}
 
@@ -503,19 +497,20 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 	return nil
 }
 
-// Release implements the fs.HandleReleaser interface. It is called when all
-// file descriptors to the file have been closed.
-func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	fh.fs.logger.Debugf("FileHandle Release request")
+// Write implements fs.HandleWriter interface. Write requests to write data
+// into the handle at the given offset.
+func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	f.fs.logger.Debugf("File Write request for %q. Offset: %v\n", f, req.Offset)
 
-	fh.offset = 0
-	if fh.body != nil {
-		err := fh.body.Close()
-		if err != nil {
-			fh.fs.logger.Printf("Filehandle Release failed: %v\n", err)
-		}
-	}
-	return nil
+	return fuse.ENOTSUP
+}
+
+// Fsync implements the fs.NodeFsyncer interface. It is called to explicitly
+// flush cached data to storage.
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	f.fs.logger.Debugf("Fsync request for %v\n", f)
+
+	return fuse.ENOTSUP
 }
 
 type staticFileNode string
