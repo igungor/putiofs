@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,28 +48,30 @@ func NewFileSystem(token string, debug bool) *FileSystem {
 	}
 }
 
-func (f *FileSystem) List(ctx context.Context, id int64) ([]putio.File, error) {
+func (f *FileSystem) list(ctx context.Context, id int64) ([]putio.File, error) {
 	files, _, err := f.putio.Files.List(ctx, id)
 	return files, err
 }
 
-func (f *FileSystem) Get(ctx context.Context, id int64) (putio.File, error) {
+func (f *FileSystem) get(ctx context.Context, id int64) (putio.File, error) {
 	return f.putio.Files.Get(ctx, id)
 }
 
-func (f *FileSystem) Delete(ctx context.Context, id int64) error {
+func (f *FileSystem) remove(ctx context.Context, id int64) error {
 	return f.putio.Files.Delete(ctx, id)
 }
 
-func (f *FileSystem) Download(ctx context.Context, id int64, rangeHeader http.Header) (io.ReadCloser, error) {
-	return f.putio.Files.Download(ctx, id, true, nil)
+func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.ReadCloser, error) {
+	rangeHeader := http.Header{}
+	rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
+	return f.putio.Files.Download(nil, id, true, rangeHeader)
 }
 
-func (f *FileSystem) Rename(ctx context.Context, id int64, newname string) error {
+func (f *FileSystem) rename(ctx context.Context, id int64, newname string) error {
 	return f.putio.Files.Rename(ctx, id, newname)
 }
 
-func (f *FileSystem) Move(ctx context.Context, parent int64, fileid int64) error {
+func (f *FileSystem) move(ctx context.Context, parent int64, fileid int64) error {
 	return f.putio.Files.Move(ctx, parent, fileid)
 }
 
@@ -77,7 +80,7 @@ func (f *FileSystem) Move(ctx context.Context, parent int64, fileid int64) error
 func (f *FileSystem) Root() (fs.Node, error) {
 	f.logger.Debugf("Root() request\n")
 
-	root, err := f.Get(nil, 0)
+	root, err := f.get(nil, 0)
 	if err != nil {
 		f.logger.Printf("Root failed: %v\n", err)
 		return nil, fuse.EIO
@@ -157,7 +160,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		return nil, nil, fuse.EIO
 	}
 
-	// possible a torrent file is uploaded. torrent files are picked up by the
+	// possibly a torrent file is uploaded. torrent files are picked up by the
 	// Put.io API and pushed into the transfer queue. Original torrent file is
 	// not keeped.
 	if u.Transfer != nil {
@@ -188,7 +191,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 	name := req.Name
 
-	files, err := d.fs.List(ctx, d.ID)
+	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
 		return nil, fuse.EIO
@@ -231,7 +234,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		return staticFileNode(acc), nil
 	}
 
-	files, err := d.fs.List(ctx, d.ID)
+	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Lookup failed for %v: %v\n", d, err)
 		return nil, fuse.EIO
@@ -262,7 +265,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.fs.logger.Debugf("Directory listing for %v\n", d)
 
-	files, err := d.fs.List(ctx, d.ID)
+	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
 		return nil, fuse.EIO
@@ -298,7 +301,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		return fuse.EIO
 	}
 
-	files, err := d.fs.List(ctx, d.ID)
+	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
 		return fuse.EIO
@@ -306,7 +309,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 	for _, file := range files {
 		if file.Filename == filename {
-			return d.fs.Delete(ctx, file.ID)
+			return d.fs.remove(ctx, file.ID)
 		}
 	}
 
@@ -329,7 +332,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 	d.fs.logger.Debugf("origdirid: %v, newDirid: %v, old: %v, newname: %v\n", d, newdir, req.OldName, req.NewName)
 
-	files, err := d.fs.List(ctx, d.ID)
+	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
 		return fuse.EIO
@@ -371,20 +374,20 @@ func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string)
 		return nil
 	}
 
-	return d.fs.Rename(ctx, fileid, newname)
+	return d.fs.rename(ctx, fileid, newname)
 }
 
 func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname string, newname string) error {
 	d.fs.logger.Debugf("Move request for %v:%v -> %v:%v\n", fileid, oldname, parent, newname)
 
-	err := d.fs.Move(ctx, parent, fileid)
+	err := d.fs.move(ctx, parent, fileid)
 	if err != nil {
 		d.fs.logger.Printf("Error moving file: %v\n", err)
 		return fuse.EIO
 	}
 
 	if oldname != newname {
-		return d.fs.Rename(ctx, fileid, newname)
+		return d.fs.rename(ctx, fileid, newname)
 	}
 
 	return nil
@@ -460,7 +463,8 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 	fh.fs.logger.Debugf("FileHandle Read request. Handle offset: %v, Request (offset: %v size: %v)\n", fh.offset, req.Offset, req.Size)
 
 	if req.Offset >= fh.f.Filesize {
-		return fuse.EIO
+		fh.fs.logger.Printf("Request offset > actual filesize\n")
+		return nil
 	}
 
 	var renew bool
@@ -473,9 +477,7 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 	}
 
 	if renew {
-		rangeHeader := http.Header{}
-		rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-%v", req.Offset, req.Offset+int64(req.Size)))
-		body, err := fh.fs.Download(nil, fh.f.ID, rangeHeader)
+		body, err := fh.fs.download(nil, fh.f.ID, req.Offset)
 		if err != nil {
 			fh.fs.logger.Printf("Error downloading %v-%v: %v\n", fh.f.ID, fh.f.Filename, err)
 			return fuse.EIO
@@ -487,6 +489,7 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 
 	buf := make([]byte, req.Size)
 	n, err := io.ReadFull(fh.body, buf)
+	fh.offset += int64(n)
 	if err == io.ErrUnexpectedEOF || err == io.EOF {
 		err = nil
 	}
@@ -495,7 +498,6 @@ func (fh *FileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fus
 		return fuse.EIO
 	}
 
-	fh.offset += int64(n)
 	resp.Data = buf[:n]
 	return nil
 }
@@ -507,7 +509,10 @@ func (fh *FileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) err
 
 	fh.offset = 0
 	if fh.body != nil {
-		return fh.body.Close()
+		err := fh.body.Close()
+		if err != nil {
+			fh.fs.logger.Printf("Filehandle Release failed: %v\n", err)
+		}
 	}
 	return nil
 }
