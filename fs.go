@@ -544,7 +544,8 @@ var junkFilePrefixes = []string{
 	".metadata_never_index",
 	".nomedia",
 	".git",
-	".envrc", // direnv
+	".envrc",  // direnv
+	".Trash-", // nautilus
 }
 
 // isJunkFile reports whether the given file path is considered useless. MacOSX
