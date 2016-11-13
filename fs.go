@@ -221,6 +221,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
 
 	// reserved filename lookups
+	// TODO: add .refresh to fetch new state of the CWD
 	switch filename {
 	case ".account":
 		acc, _ := json.MarshalIndent(d.fs.account, "", "  ")
