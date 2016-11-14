@@ -226,7 +226,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		ts, err := d.fs.putio.Transfers.List(ctx)
 		if err != nil {
 			d.fs.logger.Printf("Listing transfers failed: %v\n", err)
-			return staticFileNode("Listing transfers failed. Instead of a list, you are seeing this boring message now\n"), nil
+			return nil, fuse.EIO
 		}
 		return staticFileNode(transfers(ts).String()), nil
 	}
