@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"bazil.org/fuse"
@@ -214,9 +217,18 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	// reserved filename lookups
 	// TODO: add .refresh to fetch new state of the CWD
 	switch filename {
+	case ".quit":
+		d.fs.logger.Fatalf("Shutting down due to request .quit lookup\n")
 	case ".account":
 		acc, _ := json.MarshalIndent(d.fs.account, "", "  ")
 		return staticFileNode(acc), nil
+	case ".transfers":
+		ts, err := d.fs.putio.Transfers.List(ctx)
+		if err != nil {
+			d.fs.logger.Printf("Listing transfers failed: %v\n", err)
+			return staticFileNode("Listing transfers failed. Instead of a list, you are seeing this boring message now\n"), nil
+		}
+		return staticFileNode(transfers(ts).String()), nil
 	}
 
 	files, err := d.fs.list(ctx, d.ID)
@@ -521,6 +533,51 @@ func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	fuseutil.HandleRead(req, resp, []byte(s))
 	return nil
+}
+
+type transfers []putio.Transfer
+
+// humanizeBytes produces a human readable representation of an SI size.
+// Borrowed from github.com/dustin/go-humanize.
+func humanizeBytes(s uint64) string {
+	if s < 10 {
+		return fmt.Sprintf("%dB", s)
+	}
+	const base = 1000
+	sizes := []string{"B", "kB", "MB", "GB", "TB"}
+	e := math.Floor(math.Log(float64(s)) / math.Log(base))
+	suffix := sizes[int(e)]
+	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
+	f := "%.0f%s"
+	if val < 10 {
+		f = "%.1f%s"
+	}
+	return fmt.Sprintf(f, val, suffix)
+}
+
+func (t transfers) String() string {
+	var buf bytes.Buffer
+	const padding = 3
+
+	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
+	fmt.Fprintf(w, "Name\tStatus\t▼\t▲\t\n")
+	fmt.Fprintf(w, "----\t------\t-\t-\t\n")
+	for _, transfer := range t {
+		var status string
+		var dlSpeed, ulSpeed string
+		if transfer.Status == "COMPLETED" {
+			status = "✓"
+			dlSpeed, ulSpeed = " ", " "
+		} else {
+			status = fmt.Sprintf("%v/%v", humanizeBytes(uint64(transfer.Downloaded)), humanizeBytes(uint64(transfer.Size)))
+			dlSpeed = humanizeBytes(uint64(transfer.DownloadSpeed)) + "/s"
+			ulSpeed = humanizeBytes(uint64(transfer.UploadSpeed)) + "/s"
+		}
+
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t\n", transfer.Name, status, dlSpeed, ulSpeed)
+	}
+	_ = w.Flush()
+	return buf.String()
 }
 
 var junkFilePrefixes = []string{
