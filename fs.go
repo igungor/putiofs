@@ -256,15 +256,13 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 
 	var entries []fuse.Dirent
 	for _, file := range files {
-		var entry fuse.Dirent
-
 		var dt fuse.DirentType
 		if file.IsDir() {
 			dt = fuse.DT_Dir
 		} else {
 			dt = fuse.DT_File
 		}
-		entry = fuse.Dirent{
+		entry := fuse.Dirent{
 			Name: file.Filename,
 			Type: dt,
 		}
