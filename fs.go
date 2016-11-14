@@ -153,8 +153,6 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	d.fs.logger.Debugf("File create request for %v\n", d)
 
-	fmt.Println(req.Name)
-
 	u, err := d.fs.putio.Files.Upload(ctx, strings.NewReader(""), req.Name, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Upload failed: %v\n", err)
@@ -182,8 +180,6 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
 	d.fs.logger.Debugf("Directory mkdir request for %v\n", d)
 
-	name := req.Name
-
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
@@ -191,12 +187,12 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	}
 
 	for _, file := range files {
-		if file.Filename == name {
+		if file.Filename == req.Name {
 			return nil, fuse.EEXIST
 		}
 	}
 
-	dir, err := d.fs.putio.Files.CreateFolder(ctx, name, d.ID)
+	dir, err := d.fs.putio.Files.CreateFolder(ctx, req.Name, d.ID)
 	if err != nil {
 		d.fs.logger.Printf("Create folder failed: %v\n", err)
 		return nil, fuse.EIO
