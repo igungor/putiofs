@@ -96,9 +96,7 @@ func (f *FileSystem) Root() (fs.Node, error) {
 
 	return &Dir{
 		fs:   f,
-		ID:   root.ID,
-		Name: root.Filename,
-		Size: root.Filesize,
+		File: &root,
 	}, nil
 }
 
@@ -119,9 +117,8 @@ func (f *FileSystem) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *
 type Dir struct {
 	fs *FileSystem
 
-	ID   int64
-	Name string
-	Size int64
+	// metadata
+	*putio.File
 }
 
 var (
@@ -133,7 +130,7 @@ var (
 )
 
 func (d *Dir) String() string {
-	return fmt.Sprintf("<Dir ID: %v Name: %q>", d.ID, d.Name)
+	return fmt.Sprintf("<Dir ID: %v Name: %q>", d.ID, d.Filename)
 }
 
 // Attr implements fs.Node interface. It is called when fetching the inode
@@ -144,7 +141,7 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = os.ModeDir | 0755
 	attr.Uid = uint32(os.Getuid())
 	attr.Gid = uint32(os.Getgid())
-	attr.Size = uint64(d.Size)
+	attr.Size = uint64(d.Filesize)
 	return nil
 }
 
@@ -200,9 +197,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 	return &Dir{
 		fs:   d.fs,
-		ID:   dir.ID,
-		Name: dir.Filename,
-		Size: dir.Filesize,
+		File: &dir,
 	}, nil
 }
 
@@ -235,9 +230,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 			if file.IsDir() {
 				return &Dir{
 					fs:   d.fs,
-					ID:   file.ID,
-					Name: file.Filename,
-					Size: file.Filesize,
+					File: &file,
 				}, nil
 			}
 			return &File{
