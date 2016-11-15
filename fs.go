@@ -402,12 +402,11 @@ type File struct {
 }
 
 var (
-	_ fs.Node       = (*File)(nil)
-	_ fs.NodeOpener = (*File)(nil)
-
+	_ fs.Node           = (*File)(nil)
+	_ fs.NodeOpener     = (*File)(nil)
+	_ fs.NodeFsyncer    = (*File)(nil)
 	_ fs.HandleReader   = (*File)(nil)
 	_ fs.HandleReleaser = (*File)(nil)
-	_ fs.NodeFsyncer    = (*File)(nil)
 )
 
 func (f *File) String() string {
