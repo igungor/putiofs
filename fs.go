@@ -228,7 +228,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 			d.fs.logger.Printf("Listing transfers failed: %v\n", err)
 			return nil, fuse.EIO
 		}
-		return staticFileNode(transfers(ts).String()), nil
+		return staticFileNode(printTransfersChart(ts)), nil
 	}
 
 	files, err := d.fs.list(ctx, d.ID)
@@ -534,7 +534,34 @@ func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *f
 	return nil
 }
 
-type transfers []putio.Transfer
+func printTransfersChart(transfers []putio.Transfer) string {
+	if len(transfers) == 0 {
+		return "No transfer found\n"
+	}
+
+	var buf bytes.Buffer
+	const padding = 3
+
+	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
+	fmt.Fprintf(w, "Name\tStatus\t▼\t▲\t\n")
+	fmt.Fprintf(w, "----\t------\t-\t-\t\n")
+	for _, transfer := range transfers {
+		var status string
+		var dlSpeed, ulSpeed string
+		if transfer.Status == "COMPLETED" {
+			status = "✓"
+			dlSpeed, ulSpeed = " ", " "
+		} else {
+			status = fmt.Sprintf("%v/%v", humanizeBytes(uint64(transfer.Downloaded)), humanizeBytes(uint64(transfer.Size)))
+			dlSpeed = humanizeBytes(uint64(transfer.DownloadSpeed)) + "/s"
+			ulSpeed = humanizeBytes(uint64(transfer.UploadSpeed)) + "/s"
+		}
+
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t\n", transfer.Name, status, dlSpeed, ulSpeed)
+	}
+	_ = w.Flush()
+	return buf.String()
+}
 
 // humanizeBytes produces a human readable representation of an SI size.
 // Borrowed from github.com/dustin/go-humanize.
@@ -552,31 +579,6 @@ func humanizeBytes(s uint64) string {
 		f = "%.1f%s"
 	}
 	return fmt.Sprintf(f, val, suffix)
-}
-
-func (t transfers) String() string {
-	var buf bytes.Buffer
-	const padding = 3
-
-	w := tabwriter.NewWriter(&buf, 0, 0, padding, ' ', 0)
-	fmt.Fprintf(w, "Name\tStatus\t▼\t▲\t\n")
-	fmt.Fprintf(w, "----\t------\t-\t-\t\n")
-	for _, transfer := range t {
-		var status string
-		var dlSpeed, ulSpeed string
-		if transfer.Status == "COMPLETED" {
-			status = "✓"
-			dlSpeed, ulSpeed = " ", " "
-		} else {
-			status = fmt.Sprintf("%v/%v", humanizeBytes(uint64(transfer.Downloaded)), humanizeBytes(uint64(transfer.Size)))
-			dlSpeed = humanizeBytes(uint64(transfer.DownloadSpeed)) + "/s"
-			ulSpeed = humanizeBytes(uint64(transfer.UploadSpeed)) + "/s"
-		}
-
-		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t\n", transfer.Name, status, dlSpeed, ulSpeed)
-	}
-	_ = w.Flush()
-	return buf.String()
 }
 
 var junkFilePrefixes = []string{
