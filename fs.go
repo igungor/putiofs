@@ -407,6 +407,8 @@ var (
 	_ fs.Node           = (*File)(nil)
 	_ fs.NodeOpener     = (*File)(nil)
 	_ fs.NodeFsyncer    = (*File)(nil)
+	_ fs.NodeSetattrer  = (*File)(nil)
+	_ fs.NodeSetxattrer = (*File)(nil)
 	_ fs.HandleReader   = (*File)(nil)
 	_ fs.HandleReleaser = (*File)(nil)
 )
@@ -511,7 +513,27 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	f.fs.logger.Debugf("Fsync request for %v\n", f)
 
-	return fuse.ENOTSUP
+	return nil
+}
+
+func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
+	f.fs.logger.Debugf("Setxattr request for %v\n", f)
+
+	return nil
+}
+
+func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	f.fs.logger.Debugf("Setattr request for %v\n", f)
+
+	if req.Valid.Mode() && req.Mode != 0644 {
+		return fuse.EPERM
+	}
+
+	if req.Valid.Size() {
+		f.Filesize = int64(req.Size)
+	}
+
+	return nil
 }
 
 type staticFileNode string
