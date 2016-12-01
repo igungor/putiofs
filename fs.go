@@ -238,18 +238,20 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	}
 
 	for _, file := range files {
-		if file.Filename == filename {
-			if file.IsDir() {
-				return &Dir{
-					fs:   d.fs,
-					File: &file,
-				}, nil
-			}
-			return &File{
+		if file.Filename != filename {
+			continue
+		}
+
+		if file.IsDir() {
+			return &Dir{
 				fs:   d.fs,
 				File: &file,
 			}, nil
 		}
+		return &File{
+			fs:   d.fs,
+			File: &file,
+		}, nil
 	}
 
 	return nil, fuse.ENOENT
