@@ -15,8 +15,9 @@ func main() {
 
 	// flags
 	var (
-		token = flag.String("token", "", "personal access token")
-		debug = flag.Bool("debug", false, "debug mode")
+		token    = flag.String("token", "", "personal access token")
+		debug    = flag.Bool("debug", false, "debug mode")
+		readonly = flag.Bool("readonly", false, "mount filesystem read-only")
 	)
 	flag.Usage = usage
 	flag.Parse()
@@ -31,10 +32,18 @@ func main() {
 		os.Exit(2)
 	}
 
-	// create the fuse connection. NoAppleDouble makes OSXFUSE disallow files
-	// with names used by OS X to store extended attributes on file systems
-	// that do not support them natively.
-	conn, err := fuse.Mount(flag.Arg(0), fuse.NoAppleDouble())
+	// NoAppleDouble makes OSXFUSE disallow files with names used by OS X to
+	// store extended attributes on file systems that do not support them
+	// natively.
+	mountOpts := []fuse.MountOption{
+		fuse.NoAppleDouble(),
+		fuse.NoAppleXattr(),
+	}
+	if *readonly {
+		mountOpts = append(mountOpts, fuse.ReadOnly())
+	}
+
+	conn, err := fuse.Mount(flag.Arg(0), mountOpts...)
 	if err != nil {
 		log.Fatal(err)
 	}
