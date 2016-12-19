@@ -11,12 +11,25 @@ First you'll need Go. If you're running macOS then you'll also need
 go get github.com/igungor/putiofs
 ```
 
-
 ## run
 
 ```sh
 mkdir putio
 putiofs -token <your-personal-token> putio
+```
+
+## easter eggs
+
+* read `.transfers` pseudo file in any directory
+
+```sh
+cat .transfers
+```
+
+* read `.account` pseudo file in any directory
+
+```sh
+cat .account
 ```
 
 ## license
