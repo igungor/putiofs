@@ -8,7 +8,7 @@ First you'll need Go. If you're running macOS then you'll also need
 [OSXFUSE](https://osxfuse.github.io/).
 
 ```sh
-go get github.com/igungor/putiofs
+go get -u github.com/igungor/putiofs
 ```
 
 ## run
