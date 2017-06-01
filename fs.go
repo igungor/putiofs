@@ -133,7 +133,7 @@ var (
 )
 
 func (d *Dir) String() string {
-	return fmt.Sprintf("<Dir ID: %v Name: %q>", d.ID, d.Filename)
+	return fmt.Sprintf("<Dir ID: %v Name: %q>", d.ID, d.Name)
 }
 
 // Attr implements fs.Node interface. It is called when fetching the inode
@@ -144,7 +144,7 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = os.ModeDir | 0755
 	attr.Uid = uint32(os.Getuid())
 	attr.Gid = uint32(os.Getgid())
-	attr.Size = uint64(d.Filesize)
+	attr.Size = uint64(d.Size)
 	return nil
 }
 
@@ -187,7 +187,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	}
 
 	for _, file := range files {
-		if file.Filename == req.Name {
+		if file.Name == req.Name {
 			return nil, fuse.EEXIST
 		}
 	}
@@ -238,7 +238,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	}
 
 	for _, file := range files {
-		if file.Filename != filename {
+		if file.Name != filename {
 			continue
 		}
 
@@ -277,7 +277,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 			dt = fuse.DT_File
 		}
 		entry := fuse.Dirent{
-			Name: file.Filename,
+			Name: file.Name,
 			Type: dt,
 		}
 		entries = append(entries, entry)
@@ -303,7 +303,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	}
 
 	for _, file := range files {
-		if file.Filename == filename {
+		if file.Name == filename {
 			return d.fs.remove(ctx, file.ID)
 		}
 	}
@@ -335,7 +335,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 	fileid := int64(-1)
 	for _, file := range files {
-		if file.Filename == oldname {
+		if file.Name == oldname {
 			fileid = file.ID
 		}
 	}
@@ -414,7 +414,7 @@ var (
 )
 
 func (f *File) String() string {
-	return fmt.Sprintf("<File ID: %v Name: %q Size: %v>", f.ID, f.Filename, f.Filesize)
+	return fmt.Sprintf("<File ID: %v Name: %q Size: %v>", f.ID, f.Name, f.Size)
 }
 
 // Attr implements fs.Node interface. It is called when fetching the inode
@@ -425,7 +425,7 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = 0644
 	attr.Uid = uint32(os.Getuid())
 	attr.Gid = uint32(os.Getgid())
-	attr.Size = uint64(f.Filesize)
+	attr.Size = uint64(f.Size)
 	attr.Ctime = f.CreatedAt.Time
 	attr.Mtime = f.CreatedAt.Time
 	attr.Crtime = f.CreatedAt.Time
@@ -460,7 +460,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	f.fs.logger.Debugf("File Read request. Handle offset: %v, Request (offset: %v size: %v)\n", f.offset, req.Offset, req.Size)
 
-	if req.Offset >= f.Filesize {
+	if req.Offset >= f.Size {
 		f.fs.logger.Printf("Request offset > actual filesize\n")
 		return nil
 	}
@@ -477,7 +477,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	if renew {
 		body, err := f.fs.download(nil, f.ID, req.Offset)
 		if err != nil {
-			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Filename, err)
+			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Name, err)
 			return fuse.EIO
 		}
 		// reset offset and the body
@@ -530,7 +530,7 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	}
 
 	if req.Valid.Size() {
-		f.Filesize = int64(req.Size)
+		f.Size = int64(req.Size)
 	}
 
 	return nil
