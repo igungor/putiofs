@@ -24,7 +24,6 @@ func TestAccount_Info(t *testing.T) {
 		},
 		"has_voucher": 0,
 		"mail": "naber@iyidir.com",
-		"passive_account": false,
 		"plan_expiration_date": "2020-01-01T00:00:00",
 		"settings": {
 			"callback_url": "",

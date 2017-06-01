@@ -24,6 +24,7 @@ func (e Error) Error() string { return string(e) }
 const (
 	ErrResourceNotFound = Error("resource does not exist")
 	ErrPaymentRequired  = Error("payment required")
+	ErrUnauthorized     = Error("invalid grant")
 
 	errRedirect   = Error("redirect attempt on a no-redirect client")
 	errNegativeID = Error("file id cannot be negative")
@@ -198,12 +199,13 @@ func checkResponse(r *http.Response) error {
 		return nil
 	}
 
-	if statusCode == http.StatusNotFound {
+	switch statusCode {
+	case http.StatusNotFound:
 		return ErrResourceNotFound
-	}
-
-	if statusCode == http.StatusPaymentRequired {
+	case http.StatusPaymentRequired:
 		return ErrPaymentRequired
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
 	}
 
 	errorResponse := &ErrorResponse{Response: r}
@@ -211,7 +213,8 @@ func checkResponse(r *http.Response) error {
 	if err == nil && len(data) > 0 {
 		err = json.Unmarshal(data, errorResponse)
 		if err != nil {
-			return err
+			// unexpected error
+			return fmt.Errorf("unexpected HTTP status: %v. Details: %v:", statusCode, string(data[:250]))
 		}
 	}
 	return errorResponse
