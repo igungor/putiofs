@@ -31,14 +31,14 @@
 		{
 			"importpath": "github.com/igungor/go-putio/putio",
 			"repository": "https://github.com/igungor/go-putio",
-			"revision": "296a8618c655bdacef3789cc27f761fa837cd8c0",
+			"revision": "042c09825fd5365ab22006b89273bb54a437a659",
 			"branch": "master",
 			"path": "/putio"
 		},
 		{
 			"importpath": "golang.org/x/net/context",
 			"repository": "https://go.googlesource.com/net",
-			"revision": "569280fa63be4e201b975e5411e30a92178f0118",
+			"revision": "3da985ce5951d99de868be4385f21ea6c2b22f24",
 			"branch": "master",
 			"path": "/context"
 		},
