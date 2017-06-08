@@ -4,7 +4,7 @@ Fuse filesystem for Put.io.
 
 ## installation
 
-First you'll need Go. If you're running macOS then you'll also need
+First you'll need [Go version 1.7 or newer](https://golang.org/dl/). If you're running macOS then you'll also need
 [OSXFUSE](https://osxfuse.github.io/).
 
 ```sh
