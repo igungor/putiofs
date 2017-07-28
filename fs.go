@@ -130,6 +130,7 @@ var (
 	_ fs.NodeRequestLookuper = (*Dir)(nil)
 	_ fs.NodeRemover         = (*Dir)(nil)
 	_ fs.HandleReadDirAller  = (*Dir)(nil)
+	_ fs.NodeSymlinker       = (*Dir)(nil)
 )
 
 func (d *Dir) String() string {
@@ -360,6 +361,12 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		return fuse.EIO
 	}
 	return nil
+}
+
+func (d *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
+	d.fs.logger.Debugf("Symlink request for %v -> %v\n", req.NewName, req.Target)
+
+	return nil, fuse.ENOTSUP
 }
 
 func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string) error {
