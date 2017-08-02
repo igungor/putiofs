@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -23,7 +22,6 @@ import (
 )
 
 const defaultUserAgent = "putiofs - FUSE bridge to Put.io"
-const attrValidityDuration = time.Hour
 
 // FileSystem is the main object that represents a Put.io filesystem.
 type FileSystem struct {
@@ -40,7 +38,7 @@ var (
 // NewFileSystem returns a new Put.io FUSE filesystem.
 func NewFileSystem(token string, debug bool) *FileSystem {
 	oauthClient := oauth2.NewClient(
-		oauth2.NoContext,
+		context.Background(),
 		oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
 	)
 	client := putio.NewClient(oauthClient)
@@ -68,7 +66,7 @@ func (f *FileSystem) remove(ctx context.Context, id int64) error {
 func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.ReadCloser, error) {
 	rangeHeader := http.Header{}
 	rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
-	return f.putio.Files.Download(nil, id, true, rangeHeader)
+	return f.putio.Files.Download(context.TODO(), id, true, rangeHeader)
 }
 
 func (f *FileSystem) rename(ctx context.Context, id int64, newname string) error {
@@ -90,7 +88,7 @@ func (f *FileSystem) Root() (fs.Node, error) {
 		return nil, fuse.EIO
 	}
 
-	account, err := f.putio.Account.Info(nil)
+	account, err := f.putio.Account.Info(context.Background())
 	if err != nil {
 		f.logger.Debugf("Fetching account info failed: %v\n", err)
 		return nil, fuse.EIO
