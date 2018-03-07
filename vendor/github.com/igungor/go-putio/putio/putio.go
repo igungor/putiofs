@@ -145,7 +145,7 @@ func (c *Client) Do(r *http.Request, v interface{}) (*http.Response, error) {
 
 	err = json.NewDecoder(resp.Body).Decode(v)
 	if err != nil {
-		return resp, err
+		return nil, err
 	}
 
 	return resp, nil

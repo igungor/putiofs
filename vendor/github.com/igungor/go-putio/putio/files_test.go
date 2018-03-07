@@ -2,6 +2,7 @@ package putio
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,7 +42,8 @@ func TestFiles_Get(t *testing.T) {
 	})
 	mux.HandleFunc("/v2/files/2", http.NotFound)
 
-	file, err := client.Files.Get(nil, 1)
+	ctx := context.Background()
+	file, err := client.Files.Get(ctx, 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -51,13 +53,13 @@ func TestFiles_Get(t *testing.T) {
 	}
 
 	// negative id
-	_, err = client.Files.Get(nil, -1)
+	_, err = client.Files.Get(ctx, -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
 
 	// non-existent file
-	_, err = client.Files.Get(nil, 2)
+	_, err = client.Files.Get(ctx, 2)
 	if err != ErrResourceNotFound {
 		t.Errorf("got: %v, want: %v", err, ErrResourceNotFound)
 	}
@@ -132,7 +134,8 @@ func TestFiles_List(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	files, parent, err := client.Files.List(nil, 0)
+	ctx := context.Background()
+	files, parent, err := client.Files.List(ctx, 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -145,13 +148,13 @@ func TestFiles_List(t *testing.T) {
 	}
 
 	// negative id
-	_, _, err = client.Files.List(nil, -1)
+	_, _, err = client.Files.List(ctx, -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
 
 	// non-existent parent folder
-	_, _, err = client.Files.List(nil, 2)
+	_, _, err = client.Files.List(ctx, 2)
 	if err != ErrResourceNotFound {
 		t.Errorf("got: %v, want: %v", err, ErrResourceNotFound)
 	}
@@ -192,7 +195,8 @@ func TestFiles_CreateFolder(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	file, err := client.Files.CreateFolder(nil, "foobar", 0)
+	ctx := context.Background()
+	file, err := client.Files.CreateFolder(ctx, "foobar", 0)
 	if err != nil {
 		t.Error(err)
 	}
@@ -202,13 +206,13 @@ func TestFiles_CreateFolder(t *testing.T) {
 	}
 
 	// empty folder name
-	_, err = client.Files.CreateFolder(nil, "", 0)
+	_, err = client.Files.CreateFolder(ctx, "", 0)
 	if err == nil {
 		t.Errorf("empty folder name accepted")
 	}
 
 	// negative id
-	_, err = client.Files.CreateFolder(nil, "foobar", -1)
+	_, err = client.Files.CreateFolder(ctx, "foobar", -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
@@ -224,18 +228,19 @@ func TestFiles_Delete(t *testing.T) {
 		fmt.Fprintln(w, `{"status": "OK"}`)
 	})
 
-	err := client.Files.Delete(nil, 1, 2, 3)
+	ctx := context.Background()
+	err := client.Files.Delete(ctx, 1, 2, 3)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// empty params
-	err = client.Files.Delete(nil)
+	err = client.Files.Delete(ctx)
 	if err == nil {
 		t.Errorf("empty parameters accepted")
 	}
 
-	err = client.Files.Delete(nil, 1, 2, -1)
+	err = client.Files.Delete(ctx, 1, 2, -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
@@ -251,19 +256,20 @@ func TestFiles_Rename(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
-	err := client.Files.Rename(nil, 1, "bar")
+	ctx := context.Background()
+	err := client.Files.Rename(ctx, 1, "bar")
 	if err != nil {
 		t.Error(err)
 	}
 
 	// negative id
-	err = client.Files.Rename(nil, -1, "bar")
+	err = client.Files.Rename(ctx, -1, "bar")
 	if err == nil {
 		t.Errorf("negative file ID accepted")
 	}
 
 	// empty name
-	err = client.Files.Rename(nil, 1, "")
+	err = client.Files.Rename(ctx, 1, "")
 	if err == nil {
 		t.Errorf("empty filename accepted")
 	}
@@ -279,26 +285,28 @@ func TestFiles_Move(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
+	ctx := context.Background()
+
 	// move 1, 2, 3, 4 and 5 to root directory (0).
-	err := client.Files.Move(nil, 0, 1, 2, 3, 4, 5)
+	err := client.Files.Move(ctx, 0, 1, 2, 3, 4, 5)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// negative parent id
-	err = client.Files.Move(nil, -1, 1, 2, 3, 4, 5)
+	err = client.Files.Move(ctx, -1, 1, 2, 3, 4, 5)
 	if err == nil {
 		t.Errorf("negative parent ID accepted")
 	}
 
 	// negative file id
-	err = client.Files.Move(nil, 0, 1, 2, -3)
+	err = client.Files.Move(ctx, 0, 1, 2, -3)
 	if err == nil {
 		t.Errorf("negative file ID accepted")
 	}
 
 	// no files
-	err = client.Files.Move(nil, 0)
+	err = client.Files.Move(ctx, 0)
 	if err == nil {
 		t.Errorf("no files given and it is accepted")
 	}
@@ -341,7 +349,6 @@ func TestFiles_Download(t *testing.T) {
 }`
 		w.WriteHeader(http.StatusPaymentRequired)
 		fmt.Fprintln(w, errorBody)
-		return
 	})
 
 	mux.HandleFunc("/v2/files/666/download", func(w http.ResponseWriter, r *http.Request) {
@@ -351,7 +358,8 @@ func TestFiles_Download(t *testing.T) {
 		fmt.Fprintln(w, errorBody)
 	})
 
-	rc, err := client.Files.Download(nil, 1, false, nil)
+	ctx := context.Background()
+	rc, err := client.Files.Download(ctx, 1, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,14 +376,14 @@ func TestFiles_Download(t *testing.T) {
 	}
 
 	// negative id
-	rc, err = client.Files.Download(nil, -1, false, nil)
+	rc, err = client.Files.Download(ctx, -1, false, nil)
 	if err == nil {
 		defer rc.Close()
 		t.Errorf("negative id accepted")
 	}
 
 	// tunneled download
-	rc, err = client.Files.Download(nil, 1, true, nil)
+	rc, err = client.Files.Download(ctx, 1, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +402,7 @@ func TestFiles_Download(t *testing.T) {
 	// range request
 	rangeHeader := http.Header{}
 	rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-%v", 0, 3))
-	rc, err = client.Files.Download(nil, 1, false, rangeHeader)
+	rc, err = client.Files.Download(ctx, 1, false, rangeHeader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,13 +420,13 @@ func TestFiles_Download(t *testing.T) {
 	}
 
 	// payment required
-	_, err = client.Files.Download(nil, 2, false, nil)
+	_, err = client.Files.Download(ctx, 2, false, nil)
 	if err != ErrPaymentRequired {
 		t.Errorf("payment-required error should be returned")
 	}
 
 	// invalid grant
-	_, err = client.Files.Download(nil, 666, false, nil)
+	_, err = client.Files.Download(ctx, 666, false, nil)
 	if err != ErrUnauthorized {
 		t.Errorf("invalid-grant test failed. got:%v want: %v", err, ErrUnauthorized)
 	}
@@ -503,7 +511,8 @@ func TestFiles_Search(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	s, err := client.Files.Search(nil, "naber", 1)
+	ctx := context.Background()
+	s, err := client.Files.Search(ctx, "naber", 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -517,13 +526,13 @@ func TestFiles_Search(t *testing.T) {
 	}
 
 	// invalid page number
-	_, err = client.Files.Search(nil, "naber", 0)
+	_, err = client.Files.Search(ctx, "naber", 0)
 	if err == nil {
 		t.Errorf("invalid page number accepted")
 	}
 
 	// empty query
-	_, err = client.Files.Search(nil, "", 1)
+	_, err = client.Files.Search(ctx, "", 1)
 	if err == nil {
 		t.Errorf("empty query accepted")
 	}
@@ -539,19 +548,20 @@ func TestFiles_SetVideoPosition(t *testing.T) {
 		fmt.Fprintln(w, `{"statutus":"OK"}`)
 	})
 
-	err := client.Files.SetVideoPosition(nil, 1, 10)
+	ctx := context.Background()
+	err := client.Files.SetVideoPosition(ctx, 1, 10)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// negative id
-	err = client.Files.SetVideoPosition(nil, -1, 10)
+	err = client.Files.SetVideoPosition(ctx, -1, 10)
 	if err == nil {
 		t.Errorf("negative file id accepted")
 	}
 
 	// negative time
-	err = client.Files.SetVideoPosition(nil, 1, -1)
+	err = client.Files.SetVideoPosition(ctx, 1, -1)
 	if err == nil {
 		t.Errorf("negative time accepted")
 	}
@@ -567,13 +577,14 @@ func TestFiles_DeleteVideoPosition(t *testing.T) {
 		fmt.Fprintln(w, `{"statutus":"OK"}`)
 	})
 
-	err := client.Files.DeleteVideoPosition(nil, 1)
+	ctx := context.Background()
+	err := client.Files.DeleteVideoPosition(ctx, 1)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// negative id
-	err = client.Files.DeleteVideoPosition(nil, -1)
+	err = client.Files.DeleteVideoPosition(ctx, -1)
 	if err == nil {
 		t.Errorf("negative file id accepted")
 	}
@@ -607,7 +618,8 @@ http://qthttp.apple.com.edgesuite.net/1010qwoeiuryfg/3340_vod.m3u8
 		http.ServeContent(w, r, "media.m3u8", time.Now().UTC(), strings.NewReader(sampleHLS))
 	})
 
-	body, err := client.Files.HLSPlaylist(nil, 1, "all")
+	ctx := context.Background()
+	body, err := client.Files.HLSPlaylist(ctx, 1, "all")
 	if err != nil {
 		t.Error(err)
 	}
@@ -623,13 +635,13 @@ http://qthttp.apple.com.edgesuite.net/1010qwoeiuryfg/3340_vod.m3u8
 	}
 
 	// negative id
-	_, err = client.Files.HLSPlaylist(nil, -1, "all")
+	_, err = client.Files.HLSPlaylist(ctx, -1, "all")
 	if err == nil {
 		t.Errorf("negative file ID accepted")
 	}
 
 	// empty key
-	_, err = client.Files.HLSPlaylist(nil, 1, "")
+	_, err = client.Files.HLSPlaylist(ctx, 1, "")
 	if err == nil {
 		t.Errorf("empty key is accepted")
 	}
@@ -645,25 +657,26 @@ func TestFiles_Share(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
-	err := client.Files.share(nil, []int64{1, 2, 3}, "friend0", "friend1", "friend2")
+	ctx := context.Background()
+	err := client.Files.share(ctx, []int64{1, 2, 3}, "friend0", "friend1", "friend2")
 	if err != nil {
 		t.Error(err)
 	}
 
 	// negative file id
-	err = client.Files.share(nil, []int64{-1, 1, 2}, "friend0")
+	err = client.Files.share(ctx, []int64{-1, 1, 2}, "friend0")
 	if err == nil {
 		t.Errorf("negative file id accepted")
 	}
 
 	// no file id given
-	err = client.Files.share(nil, []int64{}, "friend0")
+	err = client.Files.share(ctx, []int64{}, "friend0")
 	if err == nil {
 		t.Errorf("no files given and accepted")
 	}
 
 	// case: everyone (given no friends share the files to every friend)
-	err = client.Files.share(nil, []int64{1})
+	err = client.Files.share(ctx, []int64{1})
 	if err != nil {
 		t.Error(err)
 	}
@@ -695,7 +708,8 @@ func TestFiles_Shared(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	files, err := client.Files.shared(nil)
+	ctx := context.Background()
+	files, err := client.Files.shared(ctx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -735,7 +749,8 @@ func TestFiles_SharedWith(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	files, err := client.Files.sharedWith(nil, 1)
+	ctx := context.Background()
+	files, err := client.Files.sharedWith(ctx, 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -775,7 +790,8 @@ func TestFiles_Subtitles(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	subtitles, err := client.Files.Subtitles(nil, 1)
+	ctx := context.Background()
+	subtitles, err := client.Files.Subtitles(ctx, 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -789,7 +805,7 @@ func TestFiles_Subtitles(t *testing.T) {
 	}
 
 	// negative id
-	_, err = client.Files.Subtitles(nil, -1)
+	_, err = client.Files.Subtitles(ctx, -1)
 	if err == nil {
 		t.Errorf("negative file ID accepted")
 	}
@@ -832,8 +848,10 @@ Let's go down.
 		}
 	})
 
+	ctx := context.Background()
+
 	// valid file ID and valid key
-	rc, err := client.Files.DownloadSubtitle(nil, 1, "key0", "")
+	rc, err := client.Files.DownloadSubtitle(ctx, 1, "key0", "")
 	if err != nil {
 		t.Error(err)
 	}
@@ -849,21 +867,21 @@ Let's go down.
 	}
 
 	// negative file ID
-	rc, err = client.Files.DownloadSubtitle(nil, -1, "key0", "")
+	rc, err = client.Files.DownloadSubtitle(ctx, -1, "key0", "")
 	if err == nil {
 		defer rc.Close()
 		t.Errorf("negative file ID accepted")
 	}
 
 	// invalid key
-	rc, err = client.Files.DownloadSubtitle(nil, 1, "key3", "")
+	rc, err = client.Files.DownloadSubtitle(ctx, 1, "key3", "")
 	if err == nil {
 		defer rc.Close()
 		t.Errorf("invalid key accepted")
 	}
 
 	// empty key
-	rc, err = client.Files.DownloadSubtitle(nil, 1, "", "")
+	rc, err = client.Files.DownloadSubtitle(ctx, 1, "", "")
 	if err != nil {
 		t.Error(err)
 	}

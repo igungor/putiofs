@@ -12,6 +12,19 @@ type ZipsService struct {
 	client *Client
 }
 
+// Zip represents Put.io zip file.
+type Zip struct {
+	ID        int64 `json:"id"`
+	CreatedAt *Time `json:"created_at"`
+
+	Size   int64  `json:"size"`
+	Status string `json:"status"`
+	URL    string `json:"url"`
+
+	// FIXME: missing_files field is missin
+	// missingFiles string
+}
+
 // Get gives detailed information about the given zip file id.
 func (z *ZipsService) Get(ctx context.Context, id int64) (Zip, error) {
 	if id < 0 {
