@@ -12,11 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"bazil.org/fuse/fuseutil"
-	"github.com/igungor/go-putio/putio"
+	"github.com/putdotio/go-putio/putio"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 )
@@ -27,6 +28,7 @@ const defaultUserAgent = "putiofs - FUSE bridge to Put.io"
 type FileSystem struct {
 	logger  *Logger
 	putio   *putio.Client
+	hc      *http.Client
 	account putio.AccountInfo
 }
 
@@ -46,6 +48,7 @@ func NewFileSystem(token string, debug bool) *FileSystem {
 
 	return &FileSystem{
 		putio:  client,
+		hc:     &http.Client{Timeout: time.Hour},
 		logger: NewLogger("putiofs: ", debug),
 	}
 }
@@ -64,9 +67,24 @@ func (f *FileSystem) remove(ctx context.Context, id int64) error {
 }
 
 func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.ReadCloser, error) {
-	rangeHeader := http.Header{}
-	rangeHeader.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
-	return f.putio.Files.Download(context.TODO(), id, true, rangeHeader)
+	const useTunnel = true
+	u, err := f.putio.Files.URL(ctx, id, useTunnel)
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch file URL: %v", err)
+	}
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not create a new request: %v", err)
+	}
+	req = req.WithContext(ctx)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
+
+	resp, err := f.hc.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
 }
 
 func (f *FileSystem) rename(ctx context.Context, id int64, newname string) error {
@@ -480,7 +498,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	}
 
 	if renew {
-		body, err := f.fs.download(nil, f.ID, req.Offset)
+		body, err := f.fs.download(ctx, f.ID, req.Offset)
 		if err != nil {
 			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Name, err)
 			return fuse.EIO
@@ -619,6 +637,10 @@ var junkFilePrefixes = []string{
 	".metadata_never_index",
 	".nomedia",
 	".git",
+	".hg",
+	".bzr",
+	".svn",
+	"_darcs",
 	".envrc",  // direnv
 	".Trash-", // nautilus
 }
