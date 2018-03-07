@@ -44,6 +44,9 @@ type Client struct {
 	// User agent for client
 	UserAgent string
 
+	// ExtraHeaders are passed to the API server on every request.
+	ExtraHeaders http.Header
+
 	// Services used for communicating with the API
 	Account   *AccountService
 	Files     *FilesService
@@ -64,19 +67,15 @@ func NewClient(httpClient *http.Client) *Client {
 	baseURL, _ := url.Parse(defaultBaseURL)
 	uploadURL, _ := url.Parse(defaultUploadURL)
 	c := &Client{
-		client:    httpClient,
-		BaseURL:   baseURL,
-		uploadURL: uploadURL,
-		UserAgent: defaultUserAgent,
+		client:       httpClient,
+		BaseURL:      baseURL,
+		uploadURL:    uploadURL,
+		UserAgent:    defaultUserAgent,
+		ExtraHeaders: make(http.Header),
 	}
 
-	// redirect once client. it's necessary to create a new client just for
-	// download operations.
-	roc := *c
-	roc.client.CheckRedirect = redirectOnceFunc
-
 	c.Account = &AccountService{client: c}
-	c.Files = &FilesService{client: c, redirectOnceClient: &roc}
+	c.Files = &FilesService{client: c}
 	c.Transfers = &TransfersService{client: c}
 	c.Zips = &ZipsService{client: c}
 	c.Friends = &FriendsService{client: c}
@@ -115,6 +114,13 @@ func (c *Client) NewRequest(ctx context.Context, method, relURL string, body io.
 	req.Header.Set("Accept", defaultMediaType)
 	req.Header.Set("User-Agent", c.UserAgent)
 
+	// merge headers with extra headers
+	for header, values := range c.ExtraHeaders {
+		for _, value := range values {
+			req.Header.Add(header, value)
+		}
+	}
+
 	return req, nil
 }
 
@@ -145,30 +151,10 @@ func (c *Client) Do(r *http.Request, v interface{}) (*http.Response, error) {
 
 	err = json.NewDecoder(resp.Body).Decode(v)
 	if err != nil {
-		return nil, err
+		return resp, err
 	}
 
 	return resp, nil
-}
-
-// redirectOnceFunc follows the redirect only once, and copies the original
-// request headers to the new one.
-func redirectOnceFunc(req *http.Request, via []*http.Request) error {
-	if len(via) == 0 {
-		return nil
-	}
-
-	if len(via) > 1 {
-		return errRedirect
-	}
-
-	// merge headers with request headers
-	for header, values := range via[0].Header {
-		for _, value := range values {
-			req.Header.Add(header, value)
-		}
-	}
-	return nil
 }
 
 // ErrorResponse reports the error caused by an API request.

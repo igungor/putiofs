@@ -15,9 +15,9 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/igungor/go-putio"
+  name = "github.com/putdotio/go-putio"
   packages = ["putio"]
-  revision = "94406739e2bd82ed6338efb2dce041742dd4d335"
+  revision = "66ee23a3399c8111396260193bf45f6e65dee6ae"
 
 [[projects]]
   branch = "master"
@@ -40,6 +40,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "7ebe27310242f9670ae5868bda6ff3ceeea9e0df5779a963831a923545f50913"
+  inputs-digest = "cdb70af40ca731609424be16204f11244fe41bd7e9df23b96249fa9ad2e87232"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -10,13 +10,6 @@ type FriendsService struct {
 	client *Client
 }
 
-// Friend represents Put.io user's friend.
-type Friend struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	AvatarURL string `json:"avatar_url"`
-}
-
 // List lists users friends.
 func (f *FriendsService) List(ctx context.Context) ([]Friend, error) {
 	req, err := f.client.NewRequest(ctx, "GET", "/v2/friends/list", nil)
@@ -66,7 +59,11 @@ func (f *FriendsService) Request(ctx context.Context, username string) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Approve approves a friend request from the given username.
@@ -82,7 +79,10 @@ func (f *FriendsService) Approve(ctx context.Context, username string) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Deny denies a friend request from the given username.
@@ -98,7 +98,10 @@ func (f *FriendsService) Deny(ctx context.Context, username string) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Unfriend removed friend from user's friend list.
@@ -114,5 +117,8 @@ func (f *FriendsService) Unfriend(ctx context.Context, username string) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }

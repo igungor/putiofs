@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -16,62 +15,7 @@ import (
 // such as listing, searching, creating new ones, or just fetching a single
 // file.
 type FilesService struct {
-	client             *Client
-	redirectOnceClient *Client
-}
-
-// File represents a Put.io file.
-type File struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	Size              int64  `json:"size"`
-	ContentType       string `json:"content_type"`
-	CreatedAt         *Time  `json:"created_at"`
-	FirstAccessedAt   *Time  `json:"first_accessed_at"`
-	ParentID          int64  `json:"parent_id"`
-	Screenshot        string `json:"screenshot"`
-	OpensubtitlesHash string `json:"opensubtitles_hash"`
-	IsMP4Available    bool   `json:"is_mp4_available"`
-	Icon              string `json:"icon"`
-	CRC32             string `json:"crc32"`
-	IsShared          bool   `json:"is_shared"`
-}
-
-func (f *File) String() string {
-	return fmt.Sprintf("<ID: %v Name: %q Size: %v>", f.ID, f.Name, f.Size)
-}
-
-// IsDir reports whether the file is a directory.
-func (f *File) IsDir() bool {
-	return f.ContentType == "application/x-directory"
-}
-
-// Search represents a search response.
-type Search struct {
-	Files []File `json:"files"`
-	Next  string `json:"next"`
-}
-
-// Subtitle represents a subtitle.
-type Subtitle struct {
-	Key      string
-	Language string
-	Name     string
-	Source   string
-}
-
-// Upload represents a Put.io upload. If the uploaded file is a torrent file,
-// Transfer field will represent the status of the transfer.
-type Upload struct {
-	File     *File     `json:"file"`
-	Transfer *Transfer `json:"transfer"`
-}
-
-type share struct {
-	FileID   int64  `json:"file_id"`
-	Filename string `json:"file_name"`
-	// Number of friends the file is shared with
-	SharedWith int64 `json:"shared_with"`
+	client *Client
 }
 
 // Get fetches file metadata for given file ID.
@@ -117,17 +61,10 @@ func (f *FilesService) List(ctx context.Context, id int64) ([]File, File, error)
 	return r.Files, r.Parent, nil
 }
 
-// Download fetches the contents of the given file. Callers can pass additional
-// useTunnel parameter to fetch the file from nearest tunnel server. Storage
-// servers accept Range requests, so a range header can be provided by headers
-// parameter.
-//
-// Download request is done by the client which is provided to the NewClient
-// constructor. Additional client tunings are taken into consideration while
-// downloading a file, such as Timeout etc.
-func (f *FilesService) Download(ctx context.Context, id int64, useTunnel bool, headers http.Header) (io.ReadCloser, error) {
+// URL returns a URL of the file for downloading or streaming.
+func (f *FilesService) URL(ctx context.Context, id int64, useTunnel bool) (string, error) {
 	if id < 0 {
-		return nil, errNegativeID
+		return "", errNegativeID
 	}
 
 	notunnel := "notunnel=1"
@@ -135,26 +72,21 @@ func (f *FilesService) Download(ctx context.Context, id int64, useTunnel bool, h
 		notunnel = "notunnel=0"
 	}
 
-	req, err := f.client.NewRequest(ctx, "GET", "/v2/files/"+itoa(id)+"/download?"+notunnel, nil)
+	req, err := f.client.NewRequest(ctx, "GET", "/v2/files/"+itoa(id)+"/url?"+notunnel, nil)
 	if err != nil {
-		return nil, err
-	}
-	// merge headers with request headers
-	for header, values := range headers {
-		for _, value := range values {
-			req.Header.Add(header, value)
-		}
+		return "", err
 	}
 
-	// Download requests should not follow redirects since an HTTP redirect
-	// ignores original request headers. We want to preserve those headers
-	// (i.e. Range headers)
-	resp, err := f.redirectOnceClient.Do(req, nil)
-	if err != nil {
-		return nil, err
+	var r struct {
+		URL string `json:"url"`
 	}
 
-	return resp.Body, nil
+	_, err = f.client.Do(req, &r)
+	if err != nil {
+		return "", err
+	}
+
+	return r.URL, nil
 }
 
 // CreateFolder creates a new folder under parent.
@@ -212,7 +144,10 @@ func (f *FilesService) Delete(ctx context.Context, files ...int64) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Rename change the name of the file to newname.
@@ -235,7 +170,11 @@ func (f *FilesService) Rename(ctx context.Context, id int64, newname string) err
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Move moves files to the given destination.
@@ -267,7 +206,10 @@ func (f *FilesService) Move(ctx context.Context, parent int64, files ...int64) e
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Upload reads from given io.Reader and uploads the file contents to Put.io
@@ -353,9 +295,8 @@ func (f *FilesService) Search(ctx context.Context, query string, page int64) (Se
 	return r, nil
 }
 
-// Convert starts a conversion of the given file to MP4 format, which is
-// playable in most media players.
-func (f *FilesService) Convert(ctx context.Context, id int64) error {
+// FIXME: is it worth to export this method?
+func (f *FilesService) convert(ctx context.Context, id int64) error {
 	if id < 0 {
 		return errNegativeID
 	}
@@ -366,7 +307,11 @@ func (f *FilesService) Convert(ctx context.Context, id int64) error {
 	}
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Share shares given files with given friends. Friends are list of usernames.
@@ -402,7 +347,11 @@ func (f *FilesService) share(ctx context.Context, files []int64, friends ...stri
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Shared returns list of shared files and share information.
@@ -543,7 +492,11 @@ func (f *FilesService) SetVideoPosition(ctx context.Context, id int64, t int) er
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DeleteVideoPosition deletes video position for a video file.
@@ -559,7 +512,11 @@ func (f *FilesService) DeleteVideoPosition(ctx context.Context, id int64) error 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = f.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func itoa(i int64) string {

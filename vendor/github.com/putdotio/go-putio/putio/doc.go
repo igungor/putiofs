@@ -6,24 +6,16 @@
 // library, but you can always use any other library that provides an http.Client.
 // If you have an OAuth2 access token (for example, a personal API token), you can
 // use it with the oauth2 library using:
-//  package main
-//
-// 	import (
-//      "context"
-//
-//      "golang.org/x/oauth2"
-//		"github.com/igungor/go-putio/putio"
-//  )
+// 	import "golang.org/x/oauth2"
 //
 // 	func main() {
-//      ctx := context.Background()
 // 		tokenSource := oauth2.StaticTokenSource(
 // 			&oauth2.Token{AccessToken: "<YOUR-TOKEN-HERE>"},
 // 		)
-// 		oauthClient := oauth2.NewClient(ctx, tokenSource)
+// 		oauthClient := oauth2.NewClient(oauth2.NoContext, tokenSource)
 // 		client := putio.NewClient(oauthClient)
 // 		// get root directory
-// 		root, err := client.Files.Get(ctx, 0)
+// 		root, err := client.Files.Get(0)
 // 	}
 // Note that when using an authenticated Client, all calls made by the client will
 // include the specified OAuth token. Therefore, authenticated clients should

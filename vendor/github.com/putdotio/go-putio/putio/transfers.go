@@ -13,48 +13,6 @@ type TransfersService struct {
 	client *Client
 }
 
-// Transfer represents a Put.io transfer state.
-type Transfer struct {
-	Availability   int    `json:"availability"`
-	CallbackURL    string `json:"callback_url"`
-	CreatedAt      *Time  `json:"created_at"`
-	CreatedTorrent bool   `json:"created_torrent"`
-	ClientIP       string `json:"client_ip"`
-
-	// FIXME: API returns either string or float non-deterministically.
-	// CurrentRatio       float32 `json:"current_ratio"`
-
-	DownloadSpeed      int    `json:"down_speed"`
-	Downloaded         int64  `json:"downloaded"`
-	DownloadID         int64  `json:"download_id"`
-	ErrorMessage       string `json:"error_message"`
-	EstimatedTime      int64  `json:"estimated_time"`
-	Extract            bool   `json:"extract"`
-	FileID             int64  `json:"file_id"`
-	FinishedAt         *Time  `json:"finished_at"`
-	ID                 int64  `json:"id"`
-	IsPrivate          bool   `json:"is_private"`
-	MagnetURI          string `json:"magneturi"`
-	Name               string `json:"name"`
-	PeersConnected     int    `json:"peers_connected"`
-	PeersGettingFromUs int    `json:"peers_getting_from_us"`
-	PeersSendingToUs   int    `json:"peers_sending_to_us"`
-	PercentDone        int    `json:"percent_done"`
-	SaveParentID       int64  `json:"save_parent_id"`
-	SecondsSeeding     int    `json:"seconds_seeding"`
-	Size               int    `json:"size"`
-	Source             string `json:"source"`
-	Status             string `json:"status"`
-	StatusMessage      string `json:"status_message"`
-	SubscriptionID     int    `json:"subscription_id"`
-	TorrentLink        string `json:"torrent_link"`
-	TrackerMessage     string `json:"tracker_message"`
-	Trackers           string `json:"tracker"`
-	Type               string `json:"type"`
-	UploadSpeed        int    `json:"up_speed"`
-	Uploaded           int64  `json:"uploaded"`
-}
-
 // List lists all active transfers. If a transfer is completed, it will not be
 // available in response.
 func (t *TransfersService) List(ctx context.Context) ([]Transfer, error) {
@@ -183,7 +141,11 @@ func (t *TransfersService) Cancel(ctx context.Context, ids ...int64) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = t.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Clean removes completed transfers from the transfer list.
@@ -195,5 +157,9 @@ func (t *TransfersService) Clean(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	_, err = t.client.Do(req, &struct{}{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

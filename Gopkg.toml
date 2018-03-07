@@ -4,7 +4,7 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/igungor/go-putio"
+  name = "github.com/putdotio/go-putio"
 
 [[constraint]]
   branch = "master"

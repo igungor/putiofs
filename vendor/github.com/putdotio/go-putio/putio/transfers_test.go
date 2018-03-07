@@ -1,7 +1,6 @@
 package putio
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -60,8 +59,7 @@ func TestTransfers_Get(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	ctx := context.Background()
-	transfer, err := client.Transfers.Get(ctx, 1)
+	transfer, err := client.Transfers.Get(nil, 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -71,7 +69,7 @@ func TestTransfers_Get(t *testing.T) {
 	}
 
 	// negative id
-	_, err = client.Transfers.Get(ctx, -1)
+	_, err = client.Transfers.Get(nil, -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
@@ -149,8 +147,7 @@ func TestTransfers_List(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	ctx := context.Background()
-	transfers, err := client.Transfers.List(ctx)
+	transfers, err := client.Transfers.List(nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -225,8 +222,7 @@ func TestTransfers_Add(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	ctx := context.Background()
-	transfer, err := client.Transfers.Add(ctx, "http://releases.ubuntu.com/16.04/ubuntu-16.04-desktop-amd64.iso.torrent", 0, "")
+	transfer, err := client.Transfers.Add(nil, "http://releases.ubuntu.com/16.04/ubuntu-16.04-desktop-amd64.iso.torrent", 0, "")
 	if err != nil {
 		t.Error(err)
 	}
@@ -236,19 +232,19 @@ func TestTransfers_Add(t *testing.T) {
 	}
 
 	// empty URL
-	_, err = client.Transfers.Add(ctx, "", 0, "")
+	_, err = client.Transfers.Add(nil, "", 0, "")
 	if err == nil {
 		t.Errorf("empty URL accepted")
 	}
 
 	// negative parent folder means use the user's prefered download folder.
-	_, err = client.Transfers.Add(ctx, "filepath", -1, "")
+	_, err = client.Transfers.Add(nil, "filepath", -1, "")
 	if err != nil {
 		t.Error(err)
 	}
 
 	// callback-url
-	_, err = client.Transfers.Add(ctx, "filepath", -1, "https://some-valid-endpoint-for-post-hook.com")
+	_, err = client.Transfers.Add(nil, "filepath", -1, "https://some-valid-endpoint-for-post-hook.com")
 	if err != nil {
 		t.Error(err)
 	}
@@ -314,8 +310,7 @@ func TestTransfers_Retry(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	ctx := context.Background()
-	transfer, err := client.Transfers.Retry(ctx, 1)
+	transfer, err := client.Transfers.Retry(nil, 1)
 	if err != nil {
 		t.Error(err)
 	}
@@ -325,13 +320,13 @@ func TestTransfers_Retry(t *testing.T) {
 	}
 
 	// negative transfer ID
-	_, err = client.Transfers.Retry(ctx, -1)
+	_, err = client.Transfers.Retry(nil, -1)
 	if err == nil {
 		t.Errorf("negative transfer ID accepted")
 	}
 
 	// non-existent tranfer iD
-	_, err = client.Transfers.Retry(ctx, 2)
+	_, err = client.Transfers.Retry(nil, 2)
 	if err != ErrResourceNotFound {
 		t.Errorf("got: %v, want: %v", err, ErrResourceNotFound)
 	}
@@ -373,26 +368,25 @@ func TestTransfers_Cancel(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
-	ctx := context.Background()
-	err := client.Transfers.Cancel(ctx, 1)
+	err := client.Transfers.Cancel(nil, 1)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// empty params
-	err = client.Transfers.Cancel(ctx)
+	err = client.Transfers.Cancel(nil)
 	if err == nil {
 		t.Errorf("no parameters given and accepted")
 	}
 
 	// negative id
-	err = client.Transfers.Cancel(ctx, 1, 2, -1)
+	err = client.Transfers.Cancel(nil, 1, 2, -1)
 	if err == nil {
 		t.Errorf("negative id accepted")
 	}
 
 	// non-existent transfer
-	err = client.Transfers.Cancel(ctx, 1, 2, 3, 4)
+	err = client.Transfers.Cancel(nil, 1, 2, 3, 4)
 	if err != ErrResourceNotFound {
 		t.Errorf("got: %v, want: %v", err, ErrResourceNotFound)
 	}
@@ -408,8 +402,7 @@ func TestTransfers_Clean(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
-	ctx := context.Background()
-	err := client.Transfers.Clean(ctx)
+	err := client.Transfers.Clean(nil)
 	if err != nil {
 		t.Error(err)
 	}

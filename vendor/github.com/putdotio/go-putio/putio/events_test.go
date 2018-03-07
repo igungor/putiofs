@@ -1,7 +1,6 @@
 package putio
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -39,8 +38,7 @@ func TestEvents_List(t *testing.T) {
 		fmt.Fprintln(w, fixture)
 	})
 
-	ctx := context.Background()
-	events, err := client.Events.List(ctx)
+	events, err := client.Events.List(nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -64,8 +62,7 @@ func TestEvents_Delete(t *testing.T) {
 		fmt.Fprintln(w, `{"status":"OK"}`)
 	})
 
-	ctx := context.Background()
-	err := client.Events.Delete(ctx)
+	err := client.Events.Delete(nil)
 	if err != nil {
 		t.Error(err)
 	}
