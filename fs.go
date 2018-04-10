@@ -563,6 +563,7 @@ type staticFileNode string
 
 var (
 	_ fs.Node         = (*staticFileNode)(nil)
+	_ fs.NodeOpener   = (*staticFileNode)(nil)
 	_ fs.HandleReader = (*staticFileNode)(nil)
 )
 
@@ -574,6 +575,12 @@ func (s staticFileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Gid = uint32(os.Getgid())
 	attr.Size = uint64(len(s))
 	return nil
+}
+
+func (f staticFileNode) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
+	// bypass page cache for static files
+	resp.Flags |= fuse.OpenDirectIO
+	return f, nil
 }
 
 func (s staticFileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
