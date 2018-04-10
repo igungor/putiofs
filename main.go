@@ -55,7 +55,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// check if the mount process has an error to report
 	<-conn.Ready
 	if err := conn.MountError; err != nil {
 		log.Fatal(err)
