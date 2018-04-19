@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,6 +80,11 @@ func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.R
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
+
+	{
+		b, _ := httputil.DumpRequest(req, false)
+		f.logger.Debugf("download request dump of %v [offset: %v]:\n%v\n", id, offset, string(b))
+	}
 
 	resp, err := f.hc.Get(u)
 	if err != nil {
@@ -416,14 +422,10 @@ func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname stri
 type File struct {
 	fs *FileSystem
 
-	// metadata
-	*putio.File
+	*putio.File // metadata
 
-	// read offset
-	offset int64
-
-	// data
-	body io.ReadCloser
+	offset int64         // read offset
+	body   io.ReadCloser // data
 }
 
 var (
