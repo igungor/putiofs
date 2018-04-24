@@ -1,3 +1,8 @@
+[prune]
+  go-tests = true
+  unused-packages = true
+  non-go = true
+
 [[constraint]]
   branch = "master"
   name = "bazil.org/fuse"
