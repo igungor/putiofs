@@ -238,7 +238,6 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
 
 	// reserved filename lookups
-	// TODO: add .refresh to fetch new state of the CWD
 	switch filename {
 	case ".quit":
 		d.fs.logger.Fatalf("Shutting down due to request .quit lookup\n")
@@ -642,18 +641,23 @@ func humanizeBytes(s uint64) string {
 }
 
 var junkFilePrefixes = []string{
-	"._",          // macOS
-	".DS_Store",   // macOS
-	".Spotlight-", // macOS
-	".ql_",        // macOS quicklook
-	".hidden",     // macOS
+	// macOS stuff
+	"._",
+	".DS_Store",
+	".Spotlight-",
+	".ql_",
+	".hidden",
 	".metadata_never_index",
 	".nomedia",
+
+	// scm stuff
 	".git",
 	".hg",
 	".bzr",
 	".svn",
 	"_darcs",
+
+	// misc garbage
 	".envrc",  // direnv
 	".Trash-", // nautilus
 }
