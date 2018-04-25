@@ -658,8 +658,9 @@ var junkFilePrefixes = []string{
 	"_darcs",
 
 	// misc garbage
-	".envrc",  // direnv
-	".Trash-", // nautilus
+	".envrc",     // direnv
+	".Trash-",    // nautilus
+	".localized", // mpv
 }
 
 // isJunkFile reports whether the given file path is considered useless. MacOSX
