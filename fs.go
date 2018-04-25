@@ -242,6 +242,10 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	switch filename {
 	case ".quit":
 		d.fs.logger.Fatalf("Shutting down due to request .quit lookup\n")
+	case ".stat":
+		f, _ := d.fs.get(ctx, d.ID)
+		stat, _ := json.MarshalIndent(f, "", "  ")
+		return staticFileNode(stat), nil
 	case ".account":
 		acc, _ := json.MarshalIndent(d.fs.account, "", "  ")
 		return staticFileNode(acc), nil
