@@ -67,7 +67,7 @@ func (f *FileSystem) remove(ctx context.Context, id int64) error {
 	return f.putio.Files.Delete(ctx, id)
 }
 
-func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.ReadCloser, error) {
+func (f *FileSystem) download(ctx context.Context, id int64, offset int64, size int) (io.ReadCloser, error) {
 	const useTunnel = true
 	u, err := f.putio.Files.URL(ctx, id, useTunnel)
 	if err != nil {
@@ -79,16 +79,24 @@ func (f *FileSystem) download(ctx context.Context, id int64, offset int64) (io.R
 		return nil, fmt.Errorf("could not create a new request: %v", err)
 	}
 	req = req.WithContext(ctx)
-	req.Header.Set("Range", fmt.Sprintf("bytes=%v-", strconv.FormatInt(offset, 10)))
+	from := strconv.FormatInt(offset, 10)
+	to := strconv.FormatInt(offset+int64(size)-1, 10)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", from, to))
 
 	{
 		b, _ := httputil.DumpRequest(req, false)
 		f.logger.Debugf("download request dump of %v [offset: %v]:\n%v\n", id, offset, string(b))
 	}
 
-	resp, err := f.hc.Get(u)
+	resp, err := f.hc.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	{
+		b, _ := httputil.DumpResponse(resp, false)
+		f.logger.Debugf("download response dump of %v [offset: %v]:\n%v\n", id, offset, string(b))
+
 	}
 	return resp.Body, nil
 }
@@ -486,7 +494,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 // Read implements the fs.HandleReader interface. It is called to handle every read request.
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	f.fs.logger.Debugf("File Read request. Handle offset: %v, Request (offset: %v size: %v)\n", f.offset, req.Offset, req.Size)
+	f.fs.logger.Debugf("File Read request. Handle offset: %v size: %v, Request (offset: %v size: %v)\n", f.offset, req.Offset, req.Size)
 
 	if req.Offset >= f.Size {
 		f.fs.logger.Printf("Request offset > actual filesize\n")
@@ -503,7 +511,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	}
 
 	if renew {
-		body, err := f.fs.download(ctx, f.ID, req.Offset)
+		body, err := f.fs.download(ctx, f.ID, req.Offset, req.Size)
 		if err != nil {
 			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Name, err)
 			return fuse.EIO
