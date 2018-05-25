@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/http/httputil"
@@ -85,7 +86,7 @@ func (f *FileSystem) download(ctx context.Context, id int64, offset int64, size 
 
 	{
 		b, _ := httputil.DumpRequest(req, false)
-		f.logger.Debugf("download request dump of %v [offset: %v]:\n%v\n", id, offset, string(b))
+		f.logger.Debugf("download request dump of %v [offset: %v]:\n%v", id, offset, string(b))
 	}
 
 	resp, err := f.hc.Do(req)
@@ -95,7 +96,7 @@ func (f *FileSystem) download(ctx context.Context, id int64, offset int64, size 
 
 	{
 		b, _ := httputil.DumpResponse(resp, false)
-		f.logger.Debugf("download response dump of %v [offset: %v]:\n%v\n", id, offset, string(b))
+		f.logger.Debugf("download response dump of %v [offset: %v]:\n%v", id, offset, string(b))
 
 	}
 	return resp.Body, nil
@@ -112,17 +113,17 @@ func (f *FileSystem) move(ctx context.Context, parent int64, fileid int64) error
 // Root implements fs.FS interface. It is called once to get the root
 // directory inode for the mount point.
 func (f *FileSystem) Root() (fs.Node, error) {
-	f.logger.Debugf("Root() request\n")
+	f.logger.Debugf("fs.Root()")
 
 	root, err := f.get(nil, 0)
 	if err != nil {
-		f.logger.Printf("Root failed: %v\n", err)
+		f.logger.Printf("could not fetch root dir: %v", err)
 		return nil, fuse.EIO
 	}
 
 	account, err := f.putio.Account.Info(context.Background())
 	if err != nil {
-		f.logger.Debugf("Fetching account info failed: %v\n", err)
+		f.logger.Debugf("could not fetch account information: %v", err)
 		return nil, fuse.EIO
 	}
 	f.account = account
@@ -157,10 +158,12 @@ type Dir struct {
 var (
 	_ fs.Node                = (*Dir)(nil)
 	_ fs.NodeMkdirer         = (*Dir)(nil)
+	_ fs.NodeCreater         = (*Dir)(nil)
 	_ fs.NodeRequestLookuper = (*Dir)(nil)
 	_ fs.NodeRemover         = (*Dir)(nil)
 	_ fs.HandleReadDirAller  = (*Dir)(nil)
 	_ fs.NodeSymlinker       = (*Dir)(nil)
+	_ fs.NodeRenamer         = (*Dir)(nil)
 )
 
 func (d *Dir) String() string {
@@ -170,7 +173,7 @@ func (d *Dir) String() string {
 // Attr implements fs.Node interface. It is called when fetching the inode
 // attribute for this directory.
 func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
-	d.fs.logger.Debugf("Directory stat for %v\n", d)
+	d.fs.logger.Debugf("dir.Attr() %v", d)
 
 	attr.Mode = os.ModeDir | 0755
 	attr.Uid = uint32(os.Getuid())
@@ -182,38 +185,27 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 // Create implements fs.NodeCreater interface. It is called to create and open
 // a new file.
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	d.fs.logger.Debugf("File create request for %v\n", d)
+	d.fs.logger.Debugf("dir.Create() %v", d)
 
 	u, err := d.fs.putio.Files.Upload(ctx, strings.NewReader(""), req.Name, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Upload failed: %v\n", err)
-		return nil, nil, fuse.EIO
-	}
-
-	// possibly a torrent file is uploaded. torrent files are picked up by the
-	// Put.io API and pushed into the transfer queue. Original torrent file is
-	// not keeped.
-	if u.Transfer != nil {
-		return nil, nil, fuse.ENOENT
-	}
-
-	if u.File == nil {
+		d.fs.logger.Printf("could not create file on remote: %v", err)
 		return nil, nil, fuse.EIO
 	}
 
 	f := &File{fs: d.fs, File: u.File}
-
-	return f, f, nil
+	h, err := f.newHandle()
+	return f, h, err
 }
 
 // Mkdir implements fs.NodeMkdirer interface. It is called to create a new
 // directory.
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	d.fs.logger.Debugf("Directory mkdir request for %v\n", d)
+	d.fs.logger.Debugf("dir.Mkdir() %v", d)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		d.fs.logger.Printf("could not list directory %q: %v", d, err)
 		return nil, fuse.EIO
 	}
 
@@ -225,7 +217,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 	dir, err := d.fs.putio.Files.CreateFolder(ctx, req.Name, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Create folder failed: %v\n", err)
+		d.fs.logger.Printf("could not create folder: %v", err)
 		return nil, fuse.EIO
 	}
 
@@ -243,7 +235,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		return nil, fuse.ENOENT
 	}
 
-	d.fs.logger.Debugf("Directory lookup for %v in %v\n", req.Name, d)
+	d.fs.logger.Debugf("dir.Lookup() %v in %v", req.Name, d)
 
 	// reserved filename lookups
 	switch filename {
@@ -259,7 +251,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	case ".transfers":
 		ts, err := d.fs.putio.Transfers.List(ctx)
 		if err != nil {
-			d.fs.logger.Printf("Listing transfers failed: %v\n", err)
+			d.fs.logger.Printf("could not list transfers: %v", err)
 			return nil, fuse.EIO
 		}
 		return staticFileNode(printTransfersChart(ts)), nil
@@ -267,7 +259,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Lookup failed for %v: %v\n", d, err)
+		d.fs.logger.Printf("could not lookup file %q: %v", d, err)
 		return nil, fuse.EIO
 	}
 
@@ -294,11 +286,11 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 // ReadDirAll implements fs.HandleReadDirAller. it returns the entire contents
 // of the directory when the directory is being listed (e.g., with "ls").
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	d.fs.logger.Debugf("Directory listing for %v\n", d)
+	d.fs.logger.Debugf("dir.ReadDirAll() %v", d)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		d.fs.logger.Printf("could not list directory %q: %v", d, err)
 		return nil, fuse.EIO
 	}
 
@@ -323,7 +315,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 // entry with the given name from the current directory. The entry to be
 // removed may correspond to a file or to a directory.
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	d.fs.logger.Debugf("Remove request for %v in %v\n", req.Name, d)
+	d.fs.logger.Debugf("dir.Remove() %v in %v", req.Name, d)
 
 	filename := req.Name
 	if filename == "/" || filename == "Your Files" {
@@ -332,7 +324,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		d.fs.logger.Printf("could not list directory %q: %v", d, err)
 		return fuse.EIO
 	}
 
@@ -352,18 +344,18 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
 	newdir, ok := newDir.(*Dir)
 	if !ok {
-		d.fs.logger.Debugf("Error converting Node to Dir\n")
+		d.fs.logger.Debugf("could not convert node to dir")
 		return fuse.EIO
 	}
 
 	oldname := req.OldName
 	newname := req.NewName
 
-	d.fs.logger.Debugf("origdirid: %v, newDirid: %v, old: %v, newname: %v\n", d, newdir, req.OldName, req.NewName)
+	d.fs.logger.Debugf("dir.Rename() old: %q, new: %q", req.OldName, req.NewName)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
-		d.fs.logger.Printf("Listing directory failed for %v: %v\n", d, err)
+		d.fs.logger.Printf("could not read directory %q: %v", d, err)
 		return fuse.EIO
 	}
 
@@ -374,7 +366,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		}
 	}
 	if fileid < 0 {
-		d.fs.logger.Printf("File not found %v: %v\n", oldname, err)
+		d.fs.logger.Printf("file not found %q: %v", oldname, err)
 		return fuse.ENOENT
 	}
 
@@ -382,7 +374,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	if newdir.ID == d.ID {
 		err := d.rename(ctx, fileid, oldname, newname)
 		if err != nil {
-			d.fs.logger.Printf("Rename failed: %v\n", err)
+			d.fs.logger.Printf("could not rename: %v", err)
 			return fuse.EIO
 		}
 	}
@@ -390,20 +382,20 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	// dst and src directory are different. something definitely moved
 	err = d.move(ctx, fileid, newdir.ID, oldname, newname)
 	if err != nil {
-		d.fs.logger.Printf("Move failed: %v\n", err)
+		d.fs.logger.Printf("could not move: %v", err)
 		return fuse.EIO
 	}
 	return nil
 }
 
 func (d *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
-	d.fs.logger.Debugf("Symlink request for %v -> %v\n", req.NewName, req.Target)
+	d.fs.logger.Debugf("dir.Symlink() %v -> %v", req.NewName, req.Target)
 
 	return nil, fuse.ENOTSUP
 }
 
 func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string) error {
-	d.fs.logger.Debugf("Rename request for %v:%v -> %v\n", fileid, oldname, newname)
+	d.fs.logger.Debugf("dir.Rename() %v:%v -> %v", fileid, oldname, newname)
 
 	if oldname == newname {
 		return nil
@@ -413,11 +405,11 @@ func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string)
 }
 
 func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname string, newname string) error {
-	d.fs.logger.Debugf("Move request for %v:%v -> %v:%v\n", fileid, oldname, parent, newname)
+	d.fs.logger.Debugf("dir.move() %v:%v -> %v:%v", fileid, oldname, parent, newname)
 
 	err := d.fs.move(ctx, parent, fileid)
 	if err != nil {
-		d.fs.logger.Printf("Error moving file: %v\n", err)
+		d.fs.logger.Printf("could not move file: %v", err)
 		return fuse.EIO
 	}
 
@@ -440,13 +432,13 @@ type File struct {
 }
 
 var (
-	_ fs.Node           = (*File)(nil)
-	_ fs.NodeOpener     = (*File)(nil)
-	_ fs.NodeFsyncer    = (*File)(nil)
-	_ fs.NodeSetattrer  = (*File)(nil)
-	_ fs.NodeSetxattrer = (*File)(nil)
-	_ fs.HandleReader   = (*File)(nil)
-	_ fs.HandleReleaser = (*File)(nil)
+	_ fs.Node            = (*File)(nil)
+	_ fs.NodeOpener      = (*File)(nil)
+	_ fs.NodeFsyncer     = (*File)(nil)
+	_ fs.NodeGetxattrer  = (*File)(nil)
+	_ fs.NodeListxattrer = (*File)(nil)
+	_ fs.NodeSetxattrer  = (*File)(nil)
+	_ fs.NodeSetattrer   = (*File)(nil)
 )
 
 func (f *File) String() string {
@@ -456,7 +448,7 @@ func (f *File) String() string {
 // Attr implements fs.Node interface. It is called when fetching the inode
 // attribute for this file.
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
-	f.fs.logger.Debugf("File stat for %v\n", f)
+	f.fs.logger.Debugf("file.Attr() %v", f)
 
 	attr.Mode = 0644
 	attr.Uid = uint32(os.Getuid())
@@ -472,63 +464,123 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 // file is opened by any process. Further opens or FD duplications will reuse
 // this handle. When all FDs have been closed, Release() will be called.
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	f.fs.logger.Debugf("File open request for %v\n", f)
+	f.fs.logger.Debugf("file.Open() %f", f)
 
-	return f, nil
+	return f.newHandle()
 }
 
-// Release implements the fs.HandleReleaser interface. It is called when all
-// file descriptors to the file have been closed.
-func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	f.fs.logger.Debugf("File Release request")
+// Fsync implements the fs.NodeFsyncer interface. It is called to explicitly
+// flush cached data to storage.
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	f.fs.logger.Debugf("file.Fsync() %v", f)
 
-	f.offset = 0
-	if f.body != nil {
-		err := f.body.Close()
-		if err != nil {
-			f.fs.logger.Printf("File release failed: %v\n", err)
-		}
+	return fuse.ENOTSUP
+}
+
+func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	f.fs.logger.Debugf("file.Setattr() %v", f)
+
+	if req.Valid.Size() {
+		f.Size = int64(req.Size)
 	}
+
 	return nil
 }
 
-// Read implements the fs.HandleReader interface. It is called to handle every read request.
-func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	f.fs.logger.Debugf("File Read request. Handle offset: %v size: %v, Request (offset: %v size: %v)\n", f.offset, req.Offset, req.Size)
+func (f *File) Getxattr(ctx context.Context, req *fuse.GetxattrRequest, res *fuse.GetxattrResponse) error {
+	f.fs.logger.Debugf("file.Getxattr() %v", f)
+	return nil
+}
 
-	if req.Offset >= f.Size {
-		f.fs.logger.Printf("Request offset > actual filesize\n")
+func (f *File) Listxattr(ctx context.Context, req *fuse.ListxattrRequest, res *fuse.ListxattrResponse) error {
+	f.fs.logger.Debugf("file.Listxattr() %v", f)
+	return nil
+}
+
+func (f *File) Removexattr(ctx context.Context, req *fuse.RemovexattrRequest) error {
+	f.fs.logger.Debugf("file.Removexattr() %v", f)
+	return nil
+}
+
+func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
+	f.fs.logger.Debugf("file.Setxattr() %v", f)
+	return nil
+}
+
+func (f *File) newHandle() (fs.Handle, error) {
+	tmp, err := ioutil.TempFile("", "putiofs-")
+	if err != nil {
+		f.fs.logger.Printf("could not open: %v", err)
+		return nil, fuse.EIO
+	}
+
+	f.fs.logger.Debugf("created %q for %v", tmp.Name(), f)
+
+	return &fileHandle{
+		f:   f,
+		tmp: tmp,
+	}, nil
+}
+
+type fileHandle struct {
+	f *File
+
+	// tmp stores the un-flushed file contents. When the handle is released,
+	// content is written to the remote.
+	tmp *os.File
+}
+
+var (
+	_ fs.HandleReader   = (*fileHandle)(nil)
+	_ fs.HandleWriter   = (*fileHandle)(nil)
+	_ fs.HandleFlusher  = (*fileHandle)(nil)
+	_ fs.HandleReleaser = (*fileHandle)(nil)
+)
+
+// Read implements the fs.HandleReader interface. It is called to handle every
+// read request.
+func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	h.f.fs.logger.Debugf(
+		"fileHandle.Read(). Handle (offset: %v size: %v) Request (offset: %v size: %v)",
+		h.f.offset,
+		h.f.Size,
+		req.Offset,
+		req.Size,
+	)
+
+	if req.Offset >= h.f.Size {
+		h.f.fs.logger.Printf("Request offset > actual filesize")
 		return nil
 	}
 
 	var renew bool
 	switch {
-	case f.body == nil: // initial read
+	case h.f.body == nil: // initial read
 		renew = true
-	case f.offset != req.Offset: // seek occurred
+	case h.f.offset != req.Offset: // seek occurred
 		renew = true
-		_ = f.body.Close()
+		_ = h.f.body.Close()
 	}
 
 	if renew {
-		body, err := f.fs.download(ctx, f.ID, req.Offset, req.Size)
+		body, err := h.f.fs.download(ctx, h.f.ID, req.Offset, req.Size)
 		if err != nil {
-			f.fs.logger.Printf("Error downloading %v-%v: %v\n", f.ID, f.Name, err)
+			h.f.fs.logger.Printf("could not download %v-%v: %v", h.f.ID, h.f.Name, err)
 			return fuse.EIO
 		}
 		// reset offset and the body
-		f.offset = req.Offset
-		f.body = body
+		h.f.offset = req.Offset
+		h.f.body = body
 	}
 
 	buf := make([]byte, req.Size)
-	n, err := io.ReadFull(f.body, buf)
-	f.offset += int64(n)
+	n, err := io.ReadFull(h.f.body, buf)
+	h.f.offset += int64(n)
 	if err == io.ErrUnexpectedEOF || err == io.EOF {
 		err = nil
 	}
 	if err != nil {
-		f.fs.logger.Printf("Error reading file %v: %v\n", f, err)
+		h.f.fs.logger.Printf("could not read file %q: %v", h.f, err)
 		return fuse.EIO
 	}
 
@@ -538,37 +590,87 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 // Write implements fs.HandleWriter interface. Write requests to write data
 // into the handle at the given offset.
-func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	f.fs.logger.Debugf("File Write request for %q. Offset: %v\n", f, req.Offset)
+func (h *fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, res *fuse.WriteResponse) error {
+	h.f.fs.logger.Debugf("fileHandle.Write()")
 
-	return fuse.ENOTSUP
+	if h.tmp == nil {
+		h.f.fs.logger.Printf("Write called on filehandle without a tempfile set")
+		return fuse.EIO
+	}
+
+	n, err := h.tmp.WriteAt(req.Data, req.Offset)
+
+	h.f.fs.logger.Printf(
+		"fileHandle.Write(%q, %d bytes at %d, flags %v) = %d, %v",
+		h.f.Name,
+		len(req.Data),
+		req.Offset,
+		req.Flags,
+		n,
+		err,
+	)
+
+	if err != nil {
+		h.f.fs.logger.Printf("fileHandle.Write: %v", err)
+		return fuse.EIO
+	}
+	res.Size = n
+	// FIXME(ig): set size here
+	return nil
 }
 
-// Fsync implements the fs.NodeFsyncer interface. It is called to explicitly
-// flush cached data to storage.
-func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	f.fs.logger.Debugf("Fsync request for %v\n", f)
+func (h *fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	h.f.fs.logger.Debugf("fileHandle.Flush()")
+
+	if h.tmp == nil {
+		h.f.fs.logger.Printf("Flush called on filehandle without a tempfile set")
+		return fuse.EIO
+	}
+	_, err := h.tmp.Seek(0, 0)
+	if err != nil {
+		h.f.fs.logger.Printf("fileHandle.Flush: %v", err)
+		return fuse.EIO
+	}
+
+	// remove the file first because Upload will create a new file even though
+	// the file exists. that's how Putio works.
+	if err := h.f.fs.putio.Files.Delete(ctx, h.f.ID); err != nil {
+		h.f.fs.logger.Printf("could not delete file %v: %v", h.f.File, err)
+		return fuse.EIO
+	}
+
+	u, err := h.f.fs.putio.Files.Upload(ctx, h.tmp, h.f.Name, h.f.ParentID)
+	if err != nil {
+		h.f.fs.logger.Printf("could not upload: %v", err)
+		return fuse.EIO
+	}
+
+	if u.File == nil {
+		h.f.fs.logger.Printf("could not create new file on remote")
+		return fuse.EIO
+	}
+
+	*h.f.File = *u.File
 
 	return nil
 }
 
-func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
-	f.fs.logger.Debugf("Setxattr request for %v\n", f)
+// Release implements the fs.HandleReleaser interface. It is called when all
+// file descriptors to the file have been closed.
+func (h *fileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	h.f.fs.logger.Debugf("fileHandle.Release()")
 
-	return nil
-}
+	h.tmp.Close()
+	os.Remove(h.tmp.Name())
+	h.tmp = nil
 
-func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
-	f.fs.logger.Debugf("Setattr request for %v\n", f)
-
-	if req.Valid.Mode() && req.Mode != 0644 {
-		return fuse.EPERM
+	h.f.offset = 0
+	if h.f.body != nil {
+		err := h.f.body.Close()
+		if err != nil {
+			h.f.fs.logger.Printf("could not release file: %v", err)
+		}
 	}
-
-	if req.Valid.Size() {
-		f.Size = int64(req.Size)
-	}
-
 	return nil
 }
 
