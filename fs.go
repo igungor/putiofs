@@ -426,9 +426,6 @@ type File struct {
 	fs *FileSystem
 
 	*putio.File // metadata
-
-	offset int64         // read offset
-	body   io.ReadCloser // data
 }
 
 var (
@@ -464,7 +461,7 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 // file is opened by any process. Further opens or FD duplications will reuse
 // this handle. When all FDs have been closed, Release() will be called.
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	f.fs.logger.Debugf("file.Open() %f", f)
+	f.fs.logger.Debugf("file.Open() %v", f)
 
 	return f.newHandle()
 }
@@ -527,7 +524,8 @@ type fileHandle struct {
 
 	// tmp stores the un-flushed file contents. When the handle is released,
 	// content is written to the remote.
-	tmp *os.File
+	tmp   *os.File
+	dirty bool
 }
 
 var (
@@ -541,9 +539,7 @@ var (
 // read request.
 func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	h.f.fs.logger.Debugf(
-		"fileHandle.Read(). Handle (offset: %v size: %v) Request (offset: %v size: %v)",
-		h.f.offset,
-		h.f.Size,
+		"fileHandle.Read() offset: %v size: %v",
 		req.Offset,
 		req.Size,
 	)
@@ -553,29 +549,14 @@ func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse
 		return nil
 	}
 
-	var renew bool
-	switch {
-	case h.f.body == nil: // initial read
-		renew = true
-	case h.f.offset != req.Offset: // seek occurred
-		renew = true
-		_ = h.f.body.Close()
-	}
-
-	if renew {
-		body, err := h.f.fs.download(ctx, h.f.ID, req.Offset, req.Size)
-		if err != nil {
-			h.f.fs.logger.Printf("could not download %v-%v: %v", h.f.ID, h.f.Name, err)
-			return fuse.EIO
-		}
-		// reset offset and the body
-		h.f.offset = req.Offset
-		h.f.body = body
+	body, err := h.f.fs.download(ctx, h.f.ID, req.Offset, req.Size)
+	if err != nil {
+		h.f.fs.logger.Printf("could not download %v-%v: %v", h.f.ID, h.f.Name, err)
+		return fuse.EIO
 	}
 
 	buf := make([]byte, req.Size)
-	n, err := io.ReadFull(h.f.body, buf)
-	h.f.offset += int64(n)
+	_, err = io.ReadFull(body, buf)
 	if err == io.ErrUnexpectedEOF || err == io.EOF {
 		err = nil
 	}
@@ -584,7 +565,7 @@ func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse
 		return fuse.EIO
 	}
 
-	resp.Data = buf[:n]
+	resp.Data = buf
 	return nil
 }
 
@@ -615,6 +596,7 @@ func (h *fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, res *fus
 		return fuse.EIO
 	}
 	res.Size = n
+	h.dirty = true
 	// FIXME(ig): set size here
 	return nil
 }
@@ -626,6 +608,11 @@ func (h *fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 		h.f.fs.logger.Printf("Flush called on filehandle without a tempfile set")
 		return fuse.EIO
 	}
+
+	if !h.dirty {
+		return nil
+	}
+
 	_, err := h.tmp.Seek(0, 0)
 	if err != nil {
 		h.f.fs.logger.Printf("fileHandle.Flush: %v", err)
@@ -651,6 +638,7 @@ func (h *fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	}
 
 	*h.f.File = *u.File
+	h.dirty = false
 
 	return nil
 }
@@ -663,14 +651,6 @@ func (h *fileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) erro
 	h.tmp.Close()
 	os.Remove(h.tmp.Name())
 	h.tmp = nil
-
-	h.f.offset = 0
-	if h.f.body != nil {
-		err := h.f.body.Close()
-		if err != nil {
-			h.f.fs.logger.Printf("could not release file: %v", err)
-		}
-	}
 	return nil
 }
 
