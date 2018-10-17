@@ -173,7 +173,7 @@ func (d *Dir) String() string {
 // Attr implements fs.Node interface. It is called when fetching the inode
 // attribute for this directory.
 func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
-	d.fs.logger.Debugf("dir.Attr() %v", d)
+	d.fs.logger.Debugf("dir.Attr(%q)", d.Name)
 
 	attr.Mode = os.ModeDir | 0755
 	attr.Uid = uint32(os.Getuid())
@@ -185,7 +185,7 @@ func (d *Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 // Create implements fs.NodeCreater interface. It is called to create and open
 // a new file.
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	d.fs.logger.Debugf("dir.Create() %v", d)
+	d.fs.logger.Debugf("dir.Create(%q)", d.Name)
 
 	u, err := d.fs.putio.Files.Upload(ctx, strings.NewReader(""), req.Name, d.ID)
 	if err != nil {
@@ -201,7 +201,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 // Mkdir implements fs.NodeMkdirer interface. It is called to create a new
 // directory.
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	d.fs.logger.Debugf("dir.Mkdir() %v", d)
+	d.fs.logger.Debugf("dir.Mkdir(%q)", d.Name)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
@@ -235,7 +235,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 		return nil, fuse.ENOENT
 	}
 
-	d.fs.logger.Debugf("dir.Lookup() %v in %v", req.Name, d)
+	d.fs.logger.Debugf("dir.Lookup(%q) in %q", req.Name, d.Name)
 
 	// reserved filename lookups
 	switch filename {
@@ -286,7 +286,7 @@ func (d *Dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 // ReadDirAll implements fs.HandleReadDirAller. it returns the entire contents
 // of the directory when the directory is being listed (e.g., with "ls").
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	d.fs.logger.Debugf("dir.ReadDirAll() %v", d)
+	d.fs.logger.Debugf("dir.ReadDirAll(%q)", d.Name)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
@@ -311,11 +311,11 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	return entries, nil
 }
 
-// Remove implements the fs.NodeRemover interace. It is called to remove the
+// Remove implements the fs.NodeRemover interface. It is called to remove the
 // entry with the given name from the current directory. The entry to be
 // removed may correspond to a file or to a directory.
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	d.fs.logger.Debugf("dir.Remove() %v in %v", req.Name, d)
+	d.fs.logger.Debugf("dir.Remove(%q) in %q", req.Name, d.Name)
 
 	filename := req.Name
 	if filename == "/" || filename == "Your Files" {
@@ -351,7 +351,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	oldname := req.OldName
 	newname := req.NewName
 
-	d.fs.logger.Debugf("dir.Rename() old: %q, new: %q", req.OldName, req.NewName)
+	d.fs.logger.Debugf("dir.Rename(old: %q, new: %q)", req.OldName, req.NewName)
 
 	files, err := d.fs.list(ctx, d.ID)
 	if err != nil {
@@ -389,13 +389,13 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 }
 
 func (d *Dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
-	d.fs.logger.Debugf("dir.Symlink() %v -> %v", req.NewName, req.Target)
+	d.fs.logger.Debugf("dir.Symlink(src: %q, dst: %q)", req.NewName, req.Target)
 
 	return nil, fuse.ENOTSUP
 }
 
 func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string) error {
-	d.fs.logger.Debugf("dir.Rename() %v:%v -> %v", fileid, oldname, newname)
+	d.fs.logger.Debugf("dir.Rename(from: %v:%q, to: %q)", fileid, oldname, newname)
 
 	if oldname == newname {
 		return nil
@@ -405,7 +405,7 @@ func (d *Dir) rename(ctx context.Context, fileid int64, oldname, newname string)
 }
 
 func (d *Dir) move(ctx context.Context, fileid int64, parent int64, oldname string, newname string) error {
-	d.fs.logger.Debugf("dir.move() %v:%v -> %v:%v", fileid, oldname, parent, newname)
+	d.fs.logger.Debugf("dir.move(from: %v:%q, to: %v:%q)", fileid, oldname, parent, newname)
 
 	err := d.fs.move(ctx, parent, fileid)
 	if err != nil {
@@ -445,7 +445,7 @@ func (f *File) String() string {
 // Attr implements fs.Node interface. It is called when fetching the inode
 // attribute for this file.
 func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
-	f.fs.logger.Debugf("file.Attr() %v", f)
+	f.fs.logger.Debugf("file.Attr(%q)", f.Name)
 
 	attr.Mode = 0644
 	attr.Uid = uint32(os.Getuid())
@@ -461,7 +461,7 @@ func (f *File) Attr(ctx context.Context, attr *fuse.Attr) error {
 // file is opened by any process. Further opens or FD duplications will reuse
 // this handle. When all FDs have been closed, Release() will be called.
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	f.fs.logger.Debugf("file.Open() %v", f)
+	f.fs.logger.Debugf("file.Open(%q, flags: %v)", f.Name, req.Flags)
 
 	return f.newHandle()
 }
@@ -469,13 +469,13 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 // Fsync implements the fs.NodeFsyncer interface. It is called to explicitly
 // flush cached data to storage.
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	f.fs.logger.Debugf("file.Fsync() %v", f)
+	f.fs.logger.Debugf("file.Fsync(%q, flags: %v)", f.Name, req.Flags)
 
 	return fuse.ENOTSUP
 }
 
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
-	f.fs.logger.Debugf("file.Setattr() %v", f)
+	f.fs.logger.Debugf("file.Setattr(%q)", f.Name)
 
 	if req.Valid.Size() {
 		f.Size = int64(req.Size)
@@ -485,22 +485,22 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 }
 
 func (f *File) Getxattr(ctx context.Context, req *fuse.GetxattrRequest, res *fuse.GetxattrResponse) error {
-	f.fs.logger.Debugf("file.Getxattr() %v", f)
+	f.fs.logger.Debugf("file.Getxattr(%q)", f.Name)
 	return nil
 }
 
 func (f *File) Listxattr(ctx context.Context, req *fuse.ListxattrRequest, res *fuse.ListxattrResponse) error {
-	f.fs.logger.Debugf("file.Listxattr() %v", f)
+	f.fs.logger.Debugf("file.Listxattr(%q)", f.Name)
 	return nil
 }
 
 func (f *File) Removexattr(ctx context.Context, req *fuse.RemovexattrRequest) error {
-	f.fs.logger.Debugf("file.Removexattr() %v", f)
+	f.fs.logger.Debugf("file.Removexattr(%q)", f.Name)
 	return nil
 }
 
 func (f *File) Setxattr(ctx context.Context, req *fuse.SetxattrRequest) error {
-	f.fs.logger.Debugf("file.Setxattr() %v", f)
+	f.fs.logger.Debugf("file.Setxattr(%q)", f.Name)
 	return nil
 }
 
@@ -538,10 +538,12 @@ var (
 // Read implements the fs.HandleReader interface. It is called to handle every
 // read request.
 func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	h.f.fs.logger.Debugf(
-		"fileHandle.Read() offset: %v size: %v",
-		req.Offset,
+	h.f.fs.logger.Printf(
+		"fileHandle.Read(%q, %v bytes at %v, flags %v)",
+		h.f.Name,
 		req.Size,
+		req.Offset,
+		req.Flags,
 	)
 
 	if req.Offset >= h.f.Size {
@@ -572,37 +574,31 @@ func (h *fileHandle) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse
 // Write implements fs.HandleWriter interface. Write requests to write data
 // into the handle at the given offset.
 func (h *fileHandle) Write(ctx context.Context, req *fuse.WriteRequest, res *fuse.WriteResponse) error {
-	h.f.fs.logger.Debugf("fileHandle.Write()")
-
-	if h.tmp == nil {
-		h.f.fs.logger.Printf("Write called on filehandle without a tempfile set")
-		return fuse.EIO
-	}
-
-	n, err := h.tmp.WriteAt(req.Data, req.Offset)
-
 	h.f.fs.logger.Printf(
-		"fileHandle.Write(%q, %d bytes at %d, flags %v) = %d, %v",
+		"fileHandle.Write(%q, %d bytes at %d, flags %v)",
 		h.f.Name,
 		len(req.Data),
 		req.Offset,
 		req.Flags,
-		n,
-		err,
 	)
 
+	if h.tmp == nil {
+		h.f.fs.logger.Printf("filehandle.Write() called on filehandle without a tempfile set")
+		return fuse.EIO
+	}
+
+	n, err := h.tmp.WriteAt(req.Data, req.Offset)
 	if err != nil {
 		h.f.fs.logger.Printf("fileHandle.Write: %v", err)
 		return fuse.EIO
 	}
 	res.Size = n
 	h.dirty = true
-	// FIXME(ig): set size here
 	return nil
 }
 
 func (h *fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	h.f.fs.logger.Debugf("fileHandle.Flush()")
+	h.f.fs.logger.Debugf("fileHandle.Flush(%q)", h.f.Name)
 
 	if h.tmp == nil {
 		h.f.fs.logger.Printf("Flush called on filehandle without a tempfile set")
@@ -646,7 +642,7 @@ func (h *fileHandle) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 // Release implements the fs.HandleReleaser interface. It is called when all
 // file descriptors to the file have been closed.
 func (h *fileHandle) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	h.f.fs.logger.Debugf("fileHandle.Release()")
+	h.f.fs.logger.Debugf("fileHandle.Release(%q)", h.f.Name)
 
 	h.tmp.Close()
 	os.Remove(h.tmp.Name())
